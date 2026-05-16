@@ -37,7 +37,7 @@ def _apply_font_overrides(slides: list, font_family: str, font_sizes: dict | Non
 def generate_pptx(
     slides: list,
     output_path: str,
-    font_family: str = "Segoe UI",
+    font_family: str = None,
     font_sizes: dict = None,
     transition: str = None,
     template_name: str = "gmim_default",

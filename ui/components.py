@@ -123,15 +123,20 @@ class VisualSlidePreviewWidget(QWidget):
         line_height = painter.fontMetrics().height() + 4
         total_height = line_height * len(self.slide_item.speaker_lines)
         y = rect.y() + max(0, (rect.height() - total_height) // 2)
+        last_speaker = ""
         for speaker_line in self.slide_item.speaker_lines:
+            speaker = (speaker_line.speaker or "").strip()
+            if speaker:
+                last_speaker = speaker
+            effective_speaker = speaker or last_speaker
             painter.setFont(font)
-            painter.setPen(_qcolor(self.speaker_color(speaker_line.speaker, style)))
-            text = f"{speaker_line.speaker} : {speaker_line.text}" if speaker_line.speaker else speaker_line.text
+            painter.setPen(_qcolor(self.speaker_color(effective_speaker, style)))
+            text = f"{speaker} : {speaker_line.text}" if speaker else speaker_line.text
             line_rect = rect.__class__(rect.x(), y, rect.width(), line_height)
             align = Qt.AlignLeft
-            if speaker_line.speaker == "J":
+            if effective_speaker == "J":
                 align = Qt.AlignRight
-            elif "+" in speaker_line.speaker:
+            elif "+" in effective_speaker:
                 align = Qt.AlignCenter
             painter.drawText(line_rect, align | Qt.AlignVCenter | Qt.TextWordWrap, text)
             y += line_height

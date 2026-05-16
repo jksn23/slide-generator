@@ -57,3 +57,32 @@ def test_slide_builder_keeps_long_creed_within_max_lines_per_slide():
         for slide in reading_slides
         for line in slide.content.splitlines()
     )
+
+
+def test_slide_builder_enforces_max_lines_for_body_slide_types():
+    long_text = (
+        "Satu dua tiga empat lima enam tujuh delapan sembilan sepuluh sebelas dua belas "
+        "tiga belas empat belas lima belas enam belas tujuh belas delapan belas sembilan belas dua puluh. "
+        "Dua puluh satu dua puluh dua dua puluh tiga dua puluh empat dua puluh lima dua puluh enam."
+    )
+    blocks = [
+        RawBlock("TATA IBADAH", "Heading 1", 0),
+        RawBlock("NKB 3 Terpujilah Allah", "Normal", 1),
+        RawBlock(long_text, "Normal", 2),
+        RawBlock("DOA PENYEMBAHAN", "Normal", 3, has_bold=True),
+        RawBlock(long_text, "Normal", 4),
+        RawBlock("NAS PEMBIMBING", "Normal", 5, has_bold=True),
+        RawBlock(long_text, "Normal", 6),
+        RawBlock("BERKAT", "Normal", 7, has_bold=True),
+        RawBlock(long_text, "Normal", 8),
+    ]
+
+    deck = parse_blocks(blocks, max_lines_per_slide=6)
+    checked_types = {SlideType.SONG_LYRICS, SlideType.PRAYER, SlideType.BIBLE_READING, SlideType.BLESSING}
+
+    assert any(slide.type == SlideType.SONG_LYRICS for slide in deck.slides)
+    assert all(
+        len(slide.content.splitlines()) <= 6
+        for slide in deck.slides
+        if slide.type in checked_types
+    )

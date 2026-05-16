@@ -4,40 +4,12 @@ from typing import Optional
 
 from core.models import SlideDeck, SlideItem, SlideType, SpeakerLine
 from core.presets import PresetRegistry
-
-
-DEFAULT_MAX_CHARS_PER_LINE = 58
+from core.text_splitter import DEFAULT_MAX_CHARS_PER_LINE, normalize_content_line, split_text_to_lines, split_text_to_slides
 
 
 def split_long_text(text: str, max_chars_per_line: int = DEFAULT_MAX_CHARS_PER_LINE) -> list[str]:
-    """Split a text block into readable lines without breaking punctuation first."""
-    result: list[str] = []
-    for raw_line in text.split("\n"):
-        line = raw_line.strip()
-        if not line:
-            continue
-        if len(line) <= max_chars_per_line:
-            result.append(line)
-            continue
-
-        current = ""
-        for part in re.split(r"(?<=[.;?,])\s+", line):
-            if len(part) > max_chars_per_line:
-                if current:
-                    result.append(current)
-                    current = ""
-                result.extend(_split_by_words(part, max_chars_per_line))
-                continue
-            if not current:
-                current = part
-            elif len(current) + len(part) + 1 <= max_chars_per_line:
-                current = f"{current} {part}"
-            else:
-                result.append(current)
-                current = part
-        if current:
-            result.append(current)
-    return result
+    """Compatibility wrapper for older tests/imports."""
+    return split_text_to_lines(text, max_chars_per_line=max_chars_per_line)
 
 
 def _split_by_words(text: str, max_chars_per_line: int) -> list[str]:
@@ -103,8 +75,8 @@ class DOCXReader:
         document = docx.Document(file_path)
         blocks: list[RawBlock] = []
         for index, paragraph in enumerate(document.paragraphs):
-            text = paragraph.text.strip()
-            if text:
+            text = paragraph.text.rstrip()
+            if text.strip():
                 font_sizes = [
                     float(run.font.size.pt)
                     for run in paragraph.runs
@@ -126,17 +98,32 @@ class DOCXReader:
 
 class BlockClassifier:
     SONG_RE = re.compile(r"^(menyanyi|nyanyian|kj|nkb|pkj2?|nnbt|mazmur|hymne|kidung)\b", re.I)
-    SPEAKER_RE = re.compile(r"^(P\+J|P\s*\+\s*J|PK|P|J|L|S)\s*(?::|\s)\s*(.*)$", re.I)
+    SPEAKER_RE = re.compile(r"^(P|J|P\+J|PK|p|Calon|L|S)\s*[:\t ]+(.*)$")
     DATE_RE = re.compile(r"\b(\d{1,2}\s+\w+\s+\d{4}|\d{1,2}[-/]\d{1,2}[-/]\d{2,4})\b", re.I)
     SECTION_KEYWORDS = {
+        "PERSIAPAN": SlideType.LITURGY_DIALOG,
+        "NYANYIAN MASUK": SlideType.LITURGY_DIALOG,
         "NAS PEMBIMBING": SlideType.BIBLE_READING,
         "TAHBISAN DAN SALAM": SlideType.LITURGY_DIALOG,
+        "PENGAKUAN DOSA DAN BERITA ANUGERAH ALLAH": SlideType.PRAYER,
         "DOA PENYEMBAHAN": SlideType.PRAYER,
+        "DOA UNTUK PEMBACAAN ALKITAB": SlideType.PRAYER,
         "PENGAKUAN DOSA": SlideType.PRAYER,
         "JANJI ANUGERAH ALLAH": SlideType.BIBLE_READING,
+        "PEMBACAAN ALKITAB": SlideType.BIBLE_READING,
+        "PENGAKUAN IMAN": SlideType.LITURGY_DIALOG,
         "PUJI-PUJIAN": SlideType.SONG_TITLE,
         "FIRMAN TUHAN": SlideType.SERMON,
         "PERSEMBAHAN": SlideType.OFFERING,
+        "PELANTIKAN PANITIA PEMILIHAN PELAYAN KHUSUS": SlideType.LITURGY_DIALOG,
+        "PENGAJARAN": SlideType.LITURGY_DIALOG,
+        "PERTANYAAN-PERTANYAAN PELANTIKAN": SlideType.LITURGY_DIALOG,
+        "PERTANYAAAN-PERTANYAAN PELANTIKAN": SlideType.LITURGY_DIALOG,
+        "PELANTIKAN": SlideType.LITURGY_DIALOG,
+        "NASEHAT DAN PENYERAHAN TUGAS-TUGAS": SlideType.LITURGY_DIALOG,
+        "DOA UMUM": SlideType.PRAYER,
+        "NYANYIAN PENUTUP": SlideType.LITURGY_DIALOG,
+        "SALAM DAN BERKAT": SlideType.BLESSING,
         "BERKAT": SlideType.BLESSING,
         "SAAT TEDUH": SlideType.PRAYER,
         "WARTA JEMAAT": SlideType.ANNOUNCEMENT,
@@ -171,10 +158,15 @@ class BlockClassifier:
 
         speaker_match = self.SPEAKER_RE.match(text)
         if speaker_match:
-            speaker = speaker_match.group(1).upper().replace(" ", "")
-            if speaker == "PK":
-                speaker = "PK"
-            speaker_text = speaker_match.group(2).strip().lstrip(" ,.-").strip()
+            speaker = self._normalize_speaker(speaker_match.group(1))
+            speaker_text = normalize_content_line(speaker_match.group(2).strip().lstrip(" ,.-"))
+            if self._is_speaker_song_title_text(speaker_text):
+                return ClassifiedBlock(
+                    RawBlock(speaker_text, block.style_name, block.index),
+                    "song_title",
+                    SlideType.SONG_TITLE,
+                    section=speaker_text,
+                )
             return ClassifiedBlock(
                 RawBlock(speaker_text, block.style_name, block.index),
                 "speaker",
@@ -182,17 +174,34 @@ class BlockClassifier:
                 speaker=speaker,
             )
 
-        if self.SONG_RE.match(text) and not self._looks_like_bible_reference(text):
-            return ClassifiedBlock(block, "song_title", SlideType.SONG_TITLE, section=text)
+        if self._is_indented_text(block.text):
+            return ClassifiedBlock(block, "body", SlideType.LITURGY_DIALOG)
+
+        if self._is_song_title_text(text):
+            return ClassifiedBlock(
+                RawBlock(text, block.style_name, block.index),
+                "song_title",
+                SlideType.SONG_TITLE,
+                section=text,
+            )
 
         if self._is_notice(text, lower):
-            return ClassifiedBlock(block, "notice", SlideType.START if "mulai ibadah" in lower else SlideType.NOTICE)
+            return ClassifiedBlock(
+                RawBlock(text, block.style_name, block.index),
+                "notice",
+                SlideType.START if "mulai ibadah" in lower else SlideType.NOTICE,
+            )
 
         if not has_cover and self._is_cover_title(upper):
-            return ClassifiedBlock(block, "cover", SlideType.COVER)
+            return ClassifiedBlock(RawBlock(text, block.style_name, block.index), "cover", SlideType.COVER)
 
         if self._is_heading(block, text):
-            return ClassifiedBlock(block, "section", self._section_type(upper), section=text)
+            return ClassifiedBlock(
+                RawBlock(text, block.style_name, block.index),
+                "section",
+                self._section_type(upper),
+                section=text,
+            )
 
         if not has_cover:
             return ClassifiedBlock(block, "cover", SlideType.COVER)
@@ -229,6 +238,23 @@ class BlockClassifier:
 
     def _looks_like_bible_reference(self, text: str) -> bool:
         return bool(re.search(r"\b\d+\s*:\s*\d+", text))
+
+    def _is_song_title_text(self, text: str) -> bool:
+        return bool(text and not self._looks_like_bible_reference(text) and (
+            self.SONG_RE.match(text)
+            or re.search(r"\bmenyanyi\b", text, re.I)
+        ))
+
+    def _is_speaker_song_title_text(self, text: str) -> bool:
+        return bool(text and not self._looks_like_bible_reference(text) and self.SONG_RE.match(text))
+
+    def _normalize_speaker(self, speaker: str) -> str:
+        if speaker in {"p", "Calon"}:
+            return speaker
+        return speaker.upper().replace(" ", "")
+
+    def _is_indented_text(self, text: str) -> bool:
+        return bool(text and text[0] in {"\t", " ", "\xa0"})
 
     def _section_type(self, upper: str) -> SlideType:
         for keyword, slide_type in self.SECTION_KEYWORDS.items():
@@ -289,32 +315,68 @@ class SlideBuilder:
     }
 
     def build(self, blocks: list[ClassifiedBlock], max_lines_per_slide: int = 6) -> SlideDeck:
+        max_lines_per_slide = max(1, int(max_lines_per_slide or 1))
         deck = SlideDeck()
         current_body_type = SlideType.LITURGY_DIALOG
         current_section = ""
         cover_lines: list[str] = []
         dialog_lines: list[SpeakerLine] = []
+        pending_dialog_speaker: Optional[str] = None
+        body_lines: list[str] = []
+        body_type = SlideType.LITURGY_DIALOG
+        body_section = ""
+        body_template = ""
 
         def flush_dialog() -> None:
-            nonlocal dialog_lines
+            nonlocal dialog_lines, pending_dialog_speaker
             if not dialog_lines:
+                pending_dialog_speaker = None
                 return
-            content = "\n".join(
-                f"{line.speaker} : {line.text}" if line.speaker else line.text
-                for line in dialog_lines
-                if line.text.strip()
-            )
-            if content:
+            chunk: list[SpeakerLine] = []
+            active_speaker = ""
+            for line in self._chunk_dialog_lines(dialog_lines):
+                speaker = line.speaker
+                if speaker:
+                    active_speaker = speaker
+                elif not chunk and active_speaker:
+                    speaker = active_speaker
+                if speaker:
+                    active_speaker = speaker
+                chunk.append(SpeakerLine(speaker, line.text))
+                if len(chunk) == max_lines_per_slide:
+                    append_dialog_chunk(chunk)
+                    chunk = []
+            if chunk:
+                append_dialog_chunk(chunk)
+            dialog_lines = []
+            pending_dialog_speaker = None
+
+        def append_dialog_chunk(lines: list[SpeakerLine]) -> None:
+            content = self._dialog_content(lines)
+            if content.strip():
                 deck.slides.append(
                     self._slide(
                         SlideType.LITURGY_DIALOG,
                         content,
                         current_section,
                         "liturgy_dialog",
-                        speaker_lines=dialog_lines,
+                        speaker_lines=lines,
                     )
                 )
-            dialog_lines = []
+
+        def flush_body() -> None:
+            nonlocal body_lines, body_type, body_section, body_template
+            if not body_lines:
+                return
+            self._append_chunked(
+                deck,
+                slide_type=body_type,
+                text="\n".join(body_lines),
+                section=body_section,
+                template=body_template,
+                max_lines=max_lines_per_slide,
+            )
+            body_lines = []
 
         for block in blocks:
             if block.kind == "metadata":
@@ -323,6 +385,7 @@ class SlideBuilder:
                 continue
 
             if block.kind == "cover":
+                flush_body()
                 flush_dialog()
                 cover_lines.extend(split_long_text(block.text))
                 continue
@@ -332,11 +395,13 @@ class SlideBuilder:
                 cover_lines = []
 
             if block.kind == "notice":
+                flush_body()
                 flush_dialog()
                 deck.slides.append(self._slide(block.slide_type, block.text, current_section, block.slide_type.value))
                 continue
 
             if block.kind == "song_title":
+                flush_body()
                 flush_dialog()
                 current_section = block.text
                 current_body_type = SlideType.SONG_LYRICS
@@ -344,6 +409,7 @@ class SlideBuilder:
                 continue
 
             if block.kind == "section":
+                flush_body()
                 flush_dialog()
                 current_section = block.text
                 current_body_type = self.BODY_TYPE_BY_SECTION.get(block.slide_type, SlideType.LITURGY_DIALOG)
@@ -355,23 +421,39 @@ class SlideBuilder:
                 continue
 
             if block.kind == "speaker":
-                dialog_lines.append(SpeakerLine(block.speaker or "", block.text))
+                flush_body()
+                text = normalize_content_line(block.text)
+                if text:
+                    dialog_lines.append(SpeakerLine(block.speaker or "", text))
+                    pending_dialog_speaker = None
+                else:
+                    pending_dialog_speaker = block.speaker or None
+                continue
+
+            if dialog_lines and self._is_indented_continuation(block.text):
+                flush_body()
+                text = normalize_content_line(block.text)
+                if text:
+                    dialog_lines.append(SpeakerLine("", text))
                 continue
 
             if current_body_type == SlideType.LITURGY_DIALOG:
-                dialog_lines.append(SpeakerLine("", block.text))
+                flush_body()
+                text = normalize_content_line(block.text)
+                if text:
+                    dialog_lines.append(SpeakerLine(pending_dialog_speaker or "", text))
+                    pending_dialog_speaker = None
                 continue
 
             flush_dialog()
-            self._append_chunked(
-                deck,
-                slide_type=current_body_type,
-                text=block.text,
-                section=current_section,
-                template=current_body_type.value,
-                max_lines=max_lines_per_slide,
-            )
+            body_type = current_body_type
+            body_section = current_section
+            body_template = current_body_type.value
+            text = block.text
+            if text:
+                body_lines.append(text)
 
+        flush_body()
         flush_dialog()
         if cover_lines:
             deck.slides.append(self._slide(SlideType.COVER, "\n".join(cover_lines), "Cover", "cover"))
@@ -381,6 +463,24 @@ class SlideBuilder:
 
         deck.assign_numbers()
         return deck
+
+    def _chunk_dialog_lines(self, lines: list[SpeakerLine]) -> list[SpeakerLine]:
+        rendered: list[SpeakerLine] = []
+        for speaker_line in lines:
+            wrapped_lines = split_text_to_lines(speaker_line.text)
+            for index, line in enumerate(wrapped_lines):
+                rendered.append(SpeakerLine(speaker_line.speaker if index == 0 else "", line))
+        return rendered
+
+    def _dialog_content(self, lines: list[SpeakerLine]) -> str:
+        return "\n".join(
+            f"{line.speaker} : {line.text}" if line.speaker else line.text
+            for line in lines
+            if line.text.strip()
+        )
+
+    def _is_indented_continuation(self, text: str) -> bool:
+        return bool(text and text[0] in {"\t", " ", "\xa0"})
 
     def _append_chunked(
         self,
@@ -392,10 +492,7 @@ class SlideBuilder:
         max_lines: int,
         speaker: Optional[str] = None,
     ) -> None:
-        lines = split_long_text(text)
-        chunks = [lines[i:i + max_lines] for i in range(0, len(lines), max_lines)] or [[""]]
-        for chunk in chunks:
-            content = "\n".join(chunk)
+        for content in split_text_to_slides(text, max_lines=max_lines):
             speaker_lines = [SpeakerLine(speaker, content)] if speaker else []
             deck.slides.append(
                 self._slide(

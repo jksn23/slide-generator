@@ -101,7 +101,7 @@ class TextRenderer:
 
     def render(self, slide, prs: Presentation, slide_item: SlideItem, style: dict) -> None:
         left, top, width, height = self._scaled_margin(prs, style.get("margin", {}))
-        font_size = self._auto_font_size(slide_item.content, int(style.get("font_size", 42)))
+        font_size = int(style.get("font_size", 42))
 
         if style.get("text_shadow"):
             self._render_text_box(slide, slide_item, style, left + Inches(0.04), top + Inches(0.04), width, height, font_size, "#000000", True)
@@ -129,32 +129,45 @@ class TextRenderer:
         if slide_item.speaker_lines:
             self._render_speaker_lines(frame, slide_item, style, font_size, shadow)
         else:
-            paragraph = frame.paragraphs[0]
-            paragraph.text = slide_item.content
+            self._render_plain_text(frame, slide_item.content, style, font_size, color, shadow)
+
+    def _render_plain_text(self, frame, content: str, style: dict, font_size: int, color: str, shadow: bool) -> None:
+        lines = (content or "").splitlines() or [""]
+        for index, line in enumerate(lines):
+            paragraph = frame.paragraphs[0] if index == 0 else frame.add_paragraph()
             paragraph.alignment = _alignment(style.get("align", "center"))
-            self._apply_font(paragraph.runs[0] if paragraph.runs else paragraph.add_run(), style, font_size, color, shadow)
+            run = paragraph.add_run()
+            run.text = line
+            self._apply_font(run, style, font_size, color, shadow)
 
     def _render_speaker_lines(self, frame, slide_item: SlideItem, style: dict, font_size: int, shadow: bool) -> None:
         speaker_colors = style.get("speaker_colors", {})
+        last_speaker = ""
         for index, speaker_line in enumerate(slide_item.speaker_lines):
+            speaker = (speaker_line.speaker or "").strip()
+            if speaker:
+                last_speaker = speaker
+            effective_speaker = speaker or last_speaker
+            line_color = speaker_colors.get(effective_speaker, style.get("color", "#FFFFFF"))
             paragraph = frame.paragraphs[0] if index == 0 else frame.add_paragraph()
-            paragraph.alignment = self._speaker_alignment(speaker_line.speaker)
-            speaker_run = paragraph.add_run()
-            speaker_run.text = f"{speaker_line.speaker} : "
-            self._apply_font(
-                speaker_run,
-                {**style, "bold": True},
-                max(12, int(font_size * 0.85)),
-                speaker_colors.get(speaker_line.speaker, style.get("color", "#FFFFFF")),
-                shadow,
-            )
+            paragraph.alignment = self._speaker_alignment(effective_speaker)
+            if speaker:
+                speaker_run = paragraph.add_run()
+                speaker_run.text = f"{speaker} : "
+                self._apply_font(
+                    speaker_run,
+                    {**style, "bold": True},
+                    font_size,
+                    line_color,
+                    shadow,
+                )
             text_run = paragraph.add_run()
             text_run.text = speaker_line.text
             self._apply_font(
                 text_run,
                 style,
                 font_size,
-                speaker_colors.get(speaker_line.speaker, style.get("color", "#FFFFFF")),
+                line_color,
                 shadow,
             )
 
@@ -170,15 +183,6 @@ class TextRenderer:
         if "+" in speaker:
             return PP_ALIGN.CENTER
         return PP_ALIGN.LEFT
-
-    def _auto_font_size(self, text: str, requested: int) -> int:
-        lines = [line for line in text.splitlines() if line.strip()]
-        longest = max((len(line) for line in lines), default=0)
-        if len(lines) > 8 or longest > 120:
-            return max(24, requested - 10)
-        if len(lines) > 6 or longest > 90:
-            return max(28, requested - 6)
-        return requested
 
 
 class PPTXRenderer:

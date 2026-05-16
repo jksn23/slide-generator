@@ -2,6 +2,7 @@ from pptx import Presentation
 
 from core.generator import generate_pptx
 from core.models import SlideItem, SlideType, SpeakerLine
+from core.template_engine import TemplateResolver
 
 
 def _shape_texts(presentation):
@@ -75,6 +76,39 @@ def test_pptx_renderer_applies_speaker_line_colors(tmp_path):
     assert str(paragraphs[2].runs[0].font.color.rgb) == "F2C94C"
 
 
+def test_pptx_renderer_preserves_dialog_font_and_continuation_color(tmp_path):
+    output = tmp_path / "speaker_fonts.pptx"
+
+    generate_pptx(
+        [
+            SlideItem(
+                type=SlideType.LITURGY_DIALOG,
+                content="P : Tetapi TUHAN\nlanjutan\nJ : Amin\nP+J : Amin",
+                speaker_lines=[
+                    SpeakerLine("P", "Tetapi TUHAN bersemayam untuk selama-lamanya."),
+                    SpeakerLine("", "Ia telah menegakkan takhta-Nya untuk menghakimi."),
+                    SpeakerLine("J", "Amin"),
+                    SpeakerLine("P+J", "Amin"),
+                ],
+                metadata={"style": {"font_family": "Arial", "font_size": 41}},
+            )
+        ],
+        str(output),
+    )
+
+    presentation = Presentation(str(output))
+    shape = [shape for shape in presentation.slides[0].shapes if hasattr(shape, "text") and shape.text][-1]
+    paragraphs = shape.text_frame.paragraphs
+    runs = [run for paragraph in paragraphs for run in paragraph.runs if run.text]
+
+    assert all(run.font.name == "Arial" for run in runs)
+    assert all(run.font.size.pt == 41 for run in runs)
+    assert str(paragraphs[0].runs[-1].font.color.rgb) == "FFFFFF"
+    assert str(paragraphs[1].runs[0].font.color.rgb) == "FFFFFF"
+    assert str(paragraphs[2].runs[-1].font.color.rgb) == "F2C94C"
+    assert str(paragraphs[3].runs[-1].font.color.rgb) == "F2C94C"
+
+
 def test_generate_pptx_applies_ui_font_overrides(tmp_path):
     output = tmp_path / "font_override.pptx"
 
@@ -90,6 +124,45 @@ def test_generate_pptx_applies_ui_font_overrides(tmp_path):
     run = text_shape.text_frame.paragraphs[0].runs[0]
     assert run.font.name == "Arial"
     assert run.font.size.pt == 72
+
+
+def test_preview_and_export_read_font_size_from_slide_metadata(tmp_path):
+    output = tmp_path / "metadata_font.pptx"
+    slide = SlideItem(
+        type=SlideType.SONG_LYRICS,
+        content="Haleluya",
+        metadata={"style": {"font_family": "Arial", "font_size": 57}},
+    )
+
+    preview_style = TemplateResolver().resolve(slide)
+    generate_pptx([slide], str(output))
+
+    presentation = Presentation(str(output))
+    text_shape = next(shape for shape in presentation.slides[0].shapes if hasattr(shape, "text") and shape.text)
+    run = text_shape.text_frame.paragraphs[0].runs[0]
+    assert preview_style["font_family"] == "Arial"
+    assert preview_style["font_size"] == 57
+    assert run.font.name == "Arial"
+    assert run.font.size.pt == 57
+
+
+def test_song_lyrics_all_export_runs_use_default_style(tmp_path):
+    output = tmp_path / "song_runs.pptx"
+    slide = SlideItem(
+        type=SlideType.SONG_LYRICS,
+        content="Baris satu\nBaris dua\nBaris tiga",
+        metadata={"style": {"font_family": "Arial", "font_size": 49, "color": "#FFFFFF"}},
+    )
+
+    generate_pptx([slide], str(output))
+
+    presentation = Presentation(str(output))
+    shape = [shape for shape in presentation.slides[0].shapes if hasattr(shape, "text") and shape.text][-1]
+    runs = [run for paragraph in shape.text_frame.paragraphs for run in paragraph.runs if run.text]
+    assert len(runs) == 3
+    assert all(run.font.name == "Arial" for run in runs)
+    assert all(run.font.size.pt == 49 for run in runs)
+    assert all(str(run.font.color.rgb) == "FFFFFF" for run in runs)
 
 
 def test_export_text_box_is_centered_on_landscape_slide(tmp_path):

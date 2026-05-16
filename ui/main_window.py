@@ -271,6 +271,29 @@ class MainWindow(QMainWindow):
             "liturgi": self.spin_font_liturgi.value(),
         }
 
+    def _font_size_for_slide(self, slide):
+        font_sizes = self._get_font_sizes()
+        if slide.type in {
+            SlideType.COVER,
+            SlideType.SECTION,
+            SlideType.SONG_TITLE,
+            SlideType.BLESSING,
+            SlideType.CLOSING,
+        }:
+            return font_sizes["title"]
+        if slide.type == SlideType.SONG_LYRICS:
+            return font_sizes["lyric"]
+        return font_sizes["liturgi"]
+
+    def apply_ui_style_to_slide(self, slide):
+        style = slide.metadata.setdefault("style", {})
+        style["font_family"] = self.combo_font.currentText()
+        style["font_size"] = self._font_size_for_slide(slide)
+
+    def apply_ui_style_to_slides(self):
+        for slide in self.slides:
+            self.apply_ui_style_to_slide(slide)
+
     def _get_aspect_ratio(self):
         return {
             "1:1 Square": "square",
@@ -299,6 +322,7 @@ class MainWindow(QMainWindow):
         self.deck.template_name = self.combo_template.currentText()
         self.deck.aspect_ratio = self._get_aspect_ratio()
         self.slides = self.deck.slides
+        self.apply_ui_style_to_slides()
         self._clear_layout(self.preview_layout)
         self._clear_layout(self.focus_preview_layout)
         self.refresh_preview_list()
@@ -317,13 +341,12 @@ class MainWindow(QMainWindow):
 
     def show_slide_preview(self, slide):
         self.selected_slide = slide
+        self.apply_ui_style_to_slide(slide)
         self._clear_layout(self.focus_preview_layout)
         preview = VisualSlidePreviewWidget(
             slide,
             template_name=self.combo_template.currentText(),
             aspect_ratio=self._get_aspect_ratio(),
-            font_family=self.combo_font.currentText(),
-            font_sizes=self._get_font_sizes(),
             size=360,
         )
         self.focus_preview_layout.addStretch()
@@ -336,6 +359,7 @@ class MainWindow(QMainWindow):
         self.edit_align.setCurrentText(slide.metadata.get("style", {}).get("align", "center"))
 
     def refresh_selected_preview(self, *args):
+        self.apply_ui_style_to_slides()
         if self.selected_slide:
             self.show_slide_preview(self.selected_slide)
 
@@ -357,6 +381,7 @@ class MainWindow(QMainWindow):
             alignment=self.edit_align.currentText(),
         )
         self.slides = self.deck.slides
+        self.apply_ui_style_to_slide(slide)
         self.refresh_preview_list()
         self.show_slide_preview(slide)
         self.statusBar().showMessage("Slide berhasil diperbarui.")
@@ -386,6 +411,7 @@ class MainWindow(QMainWindow):
             return
         DeckEditor(self.deck).move(self.selected_slide.id, direction)
         self.slides = self.deck.slides
+        self.apply_ui_style_to_slides()
         self.refresh_preview_list()
         self.show_slide_preview(self.selected_slide)
 
@@ -408,6 +434,7 @@ class MainWindow(QMainWindow):
 
         self.statusBar().showMessage("Sedang membuat file PowerPoint...")
         try:
+            self.apply_ui_style_to_slides()
             generate_pptx(
                 slides=self.slides,
                 output_path=save_path,
