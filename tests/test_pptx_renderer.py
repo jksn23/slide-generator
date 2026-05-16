@@ -46,6 +46,35 @@ def test_pptx_renderer_outputs_rich_speaker_text(tmp_path):
     assert "Tuhan menyertai saudara." in text
 
 
+def test_pptx_renderer_applies_speaker_line_colors(tmp_path):
+    output = tmp_path / "speaker_colors.pptx"
+
+    generate_pptx(
+        [
+            SlideItem(
+                type=SlideType.LITURGY_DIALOG,
+                content="P : Tetapi TUHAN\nJ : Amin\nP+J : Amin",
+                speaker_lines=[
+                    SpeakerLine("P", "Tetapi TUHAN bersemayam untuk selama-lamanya."),
+                    SpeakerLine("J", "Amin"),
+                    SpeakerLine("P+J", "Amin"),
+                ],
+            )
+        ],
+        str(output),
+    )
+
+    presentation = Presentation(str(output))
+    shape = [shape for shape in presentation.slides[0].shapes if hasattr(shape, "text") and shape.text][-1]
+    paragraphs = shape.text_frame.paragraphs
+
+    assert paragraphs[0].runs[0].font.color.rgb == paragraphs[0].runs[1].font.color.rgb
+    assert str(paragraphs[0].runs[0].font.color.rgb) == "FFFFFF"
+    assert str(paragraphs[1].runs[0].font.color.rgb) == "F2C94C"
+    assert str(paragraphs[1].runs[1].font.color.rgb) == "F2C94C"
+    assert str(paragraphs[2].runs[0].font.color.rgb) == "F2C94C"
+
+
 def test_generate_pptx_applies_ui_font_overrides(tmp_path):
     output = tmp_path / "font_override.pptx"
 

@@ -31,7 +31,7 @@ def test_parser_detects_liturgy_speaker_lines():
 
     liturgy = [slide for slide in deck.slides if slide.type == SlideType.LITURGY_DIALOG]
 
-    assert [slide.speaker for slide in liturgy] == ["P", "J", "P+J"]
+    assert [line.speaker for line in liturgy[0].speaker_lines] == ["P", "J", "P+J"]
     assert liturgy[0].speaker_lines[0].text == "Tuhan menyertai saudara."
 
 

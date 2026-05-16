@@ -150,7 +150,13 @@ class TextRenderer:
             )
             text_run = paragraph.add_run()
             text_run.text = speaker_line.text
-            self._apply_font(text_run, style, font_size, style.get("color", "#FFFFFF"), shadow)
+            self._apply_font(
+                text_run,
+                style,
+                font_size,
+                speaker_colors.get(speaker_line.speaker, style.get("color", "#FFFFFF")),
+                shadow,
+            )
 
     def _apply_font(self, run, style: dict, font_size: int, color: str, shadow: bool) -> None:
         run.font.name = style.get("font_family", "Segoe UI")

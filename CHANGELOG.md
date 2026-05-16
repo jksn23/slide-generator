@@ -1,5 +1,38 @@
 # Changelog
 
+## Perbaikan - Parser Style-Aware dan Dialog Liturgi
+
+Ringkasan:
+- `DOCXReader` sekarang membaca `paragraph.style.name`, `paragraph.alignment`, `run.bold`, `run.font.size`, dan `uppercase_ratio`.
+- Parser mengenali heading bold/uppercase/keyword untuk `NAS PEMBIMBING`, `TAHBISAN DAN SALAM`, `DOA PENYEMBAHAN`, `PENGAKUAN DOSA`, `JANJI ANUGERAH ALLAH`, `PUJI-PUJIAN`, `FIRMAN TUHAN`, `PERSEMBAHAN`, `BERKAT`, `SAAT TEDUH`, `WARTA JEMAAT`, dan `KHOTBAH`.
+- Regex speaker diperluas untuk `P:`, `P :`, `P `, `P ,`, `J:`, `J :`, `J `, `P+J:`, `P+J `, `PK:`, `PK `, `L:`, dan `S:`.
+- Dialog liturgi berurutan sekarang digabung dalam satu `liturgy_dialog` sampai bertemu heading/section/song title baru, bukan dipotong hanya karena `max_lines`.
+- Preview dan export memakai kontrak warna speaker yang sama: `P` putih, `J` kuning, `P+J` kuning.
+- `Mazmur 9:8-9` setelah `NAS PEMBIMBING` tidak lagi salah diklasifikasikan sebagai judul lagu.
+
+File yang diubah:
+- `core/parser.py`
+- `core/renderers.py`
+- `ui/components.py`
+- `templates/gmim_default.json`
+- `templates/gmim_dark.json`
+- `tests/test_docx_reader_style.py`
+- `tests/test_parser_liturgy.py`
+- `tests/test_section_detector.py`
+- `tests/test_pptx_renderer.py`
+- `tests/test_preview_components.py`
+
+Test yang dijalankan:
+- `.\\venv\\Scripts\\python.exe -m pytest`
+- `.\\venv\\Scripts\\python.exe -m compileall .`
+
+Hasil test:
+- Lulus: 40 passed.
+- Compileall seluruh project lulus.
+
+Risiko tersisa:
+- Deteksi heading masih heuristik. Dokumen dengan format visual yang sangat berbeda tetap mungkin perlu koreksi manual melalui editor.
+
 ## Perbaikan - Export Teks Tidak Sama Dengan Preview
 
 Ringkasan:

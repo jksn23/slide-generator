@@ -15,7 +15,7 @@
     "vertical_align": "middle",
     "bold": false,
     "margin": {"left": 0.8, "top": 0.8, "width": 8.4, "height": 8.4},
-    "speaker_colors": {"P": "#FFFFFF", "J": "#F2C94C", "P+J": "#F2C94C", "L": "#FFFFFF", "S": "#F2C94C"}
+    "speaker_colors": {"P": "#FFFFFF", "J": "#F2C94C", "P+J": "#F2C94C", "PK": "#FFFFFF", "L": "#FFFFFF", "S": "#F2C94C"}
   },
   "slides": {
     "cover": {"font_size": 54, "bold": true, "background": {"color": "#1F4D3A"}},

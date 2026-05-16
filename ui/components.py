@@ -107,8 +107,8 @@ class VisualSlidePreviewWidget(QWidget):
         painter.setPen(text_color)
 
         if self.slide_item.speaker_lines:
-            lines = [f"{line.speaker} : {line.text}" for line in self.slide_item.speaker_lines]
-            text = "\n".join(lines)
+            self._draw_speaker_lines(painter, rect, style, font)
+            return
         else:
             text = self.slide_item.content
 
@@ -118,6 +118,28 @@ class VisualSlidePreviewWidget(QWidget):
             "center": Qt.AlignCenter,
         }.get(style.get("align", "center"), Qt.AlignCenter)
         painter.drawText(rect, align | Qt.AlignVCenter | Qt.TextWordWrap, text)
+
+    def _draw_speaker_lines(self, painter: QPainter, rect, style: dict, font: QFont) -> None:
+        line_height = painter.fontMetrics().height() + 4
+        total_height = line_height * len(self.slide_item.speaker_lines)
+        y = rect.y() + max(0, (rect.height() - total_height) // 2)
+        for speaker_line in self.slide_item.speaker_lines:
+            painter.setFont(font)
+            painter.setPen(_qcolor(self.speaker_color(speaker_line.speaker, style)))
+            text = f"{speaker_line.speaker} : {speaker_line.text}" if speaker_line.speaker else speaker_line.text
+            line_rect = rect.__class__(rect.x(), y, rect.width(), line_height)
+            align = Qt.AlignLeft
+            if speaker_line.speaker == "J":
+                align = Qt.AlignRight
+            elif "+" in speaker_line.speaker:
+                align = Qt.AlignCenter
+            painter.drawText(line_rect, align | Qt.AlignVCenter | Qt.TextWordWrap, text)
+            y += line_height
+
+    @staticmethod
+    def speaker_color(speaker: str, style: dict) -> str:
+        speaker_colors = style.get("speaker_colors", {})
+        return speaker_colors.get(speaker, style.get("color", "#FFFFFF"))
 
 
 class PreviewSlideItemWidget(QWidget):

@@ -17,3 +17,11 @@ def test_preview_uses_slide_type_labels_and_template_contract():
 
     assert slide.type.label == "Lirik Lagu"
     assert PreviewSlideItemWidget.selected is not None
+
+
+def test_preview_uses_same_speaker_color_contract_as_template():
+    style = {"color": "#FFFFFF", "speaker_colors": {"P": "#FFFFFF", "J": "#F2C94C", "P+J": "#F2C94C"}}
+
+    assert VisualSlidePreviewWidget.speaker_color("P", style) == "#FFFFFF"
+    assert VisualSlidePreviewWidget.speaker_color("J", style) == "#F2C94C"
+    assert VisualSlidePreviewWidget.speaker_color("P+J", style) == "#F2C94C"
