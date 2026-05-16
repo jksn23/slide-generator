@@ -1,208 +1,367 @@
 import re
-from core.models import SlideType, SlideItem
+from dataclasses import dataclass
+from typing import Optional
 
-def split_long_text(text: str, max_chars_per_line: int = 90) -> list:
-    """Split a long text block into list of lines, respecting punctuation."""
-    lines = text.split('\n')
-    result = []
-    for line in lines:
-        line = line.strip()
+from core.models import SlideDeck, SlideItem, SlideType, SpeakerLine
+from core.presets import PresetRegistry
+
+
+DEFAULT_MAX_CHARS_PER_LINE = 58
+
+
+def split_long_text(text: str, max_chars_per_line: int = DEFAULT_MAX_CHARS_PER_LINE) -> list[str]:
+    """Split a text block into readable lines without breaking punctuation first."""
+    result: list[str] = []
+    for raw_line in text.split("\n"):
+        line = raw_line.strip()
         if not line:
             continue
         if len(line) <= max_chars_per_line:
             result.append(line)
-        else:
-            # Try to split on sentence boundaries first
-            sentences = re.split(r'(?<=[.;?])\s+', line)
-            current_line = ""
-            for sentence in sentences:
-                if not current_line:
-                    if len(sentence) > max_chars_per_line:
-                        # Split on commas
-                        sub_parts = re.split(r'(?<=,)\s+', sentence)
-                        sub_line = ""
-                        for part in sub_parts:
-                            if len(sub_line) + len(part) <= max_chars_per_line:
-                                sub_line += (" " if sub_line else "") + part
-                            else:
-                                if sub_line:
-                                    result.append(sub_line)
-                                sub_line = part
-                        if sub_line:
-                            current_line = sub_line
-                    else:
-                        current_line = sentence
-                else:
-                    if len(current_line) + len(sentence) + 1 <= max_chars_per_line:
-                        current_line += " " + sentence
-                    else:
-                        result.append(current_line)
-                        if len(sentence) > max_chars_per_line:
-                            sub_parts = re.split(r'(?<=,)\s+', sentence)
-                            sub_line = ""
-                            for part in sub_parts:
-                                if len(sub_line) + len(part) <= max_chars_per_line:
-                                    sub_line += (" " if sub_line else "") + part
-                                else:
-                                    if sub_line:
-                                        result.append(sub_line)
-                                    sub_line = part
-                            if sub_line:
-                                current_line = sub_line
-                        else:
-                            current_line = sentence
-            if current_line:
-                result.append(current_line)
+            continue
+
+        current = ""
+        for part in re.split(r"(?<=[.;?,])\s+", line):
+            if len(part) > max_chars_per_line:
+                if current:
+                    result.append(current)
+                    current = ""
+                result.extend(_split_by_words(part, max_chars_per_line))
+                continue
+            if not current:
+                current = part
+            elif len(current) + len(part) + 1 <= max_chars_per_line:
+                current = f"{current} {part}"
+            else:
+                result.append(current)
+                current = part
+        if current:
+            result.append(current)
     return result
 
 
-def parse_docx(file_path: str, max_lines_per_slide: int = 6) -> list:
-    try:
-        import docx
-    except ImportError:
-        return [SlideItem(slide_type=SlideType.COVER, content="Error: python-docx not installed.")]
+def _split_by_words(text: str, max_chars_per_line: int) -> list[str]:
+    lines: list[str] = []
+    current = ""
+    for word in text.split():
+        if not current:
+            current = word
+        elif len(current) + len(word) + 1 <= max_chars_per_line:
+            current = f"{current} {word}"
+        else:
+            lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    return lines
 
-    doc = docx.Document(file_path)
-    slides = []
 
-    current_type = SlideType.COVER
-    current_title = ""
-    buffer_lines = []
-    current_speaker = None
+@dataclass
+class RawBlock:
+    text: str
+    style_name: str = ""
+    index: int = 0
 
-    # --- Nyanyian mode flag ---
-    # True when we're inside a lagu/nyanyian section, so liturgi is center-aligned
-    nyanyian_mode = False
 
-    def flush_buffer():
-        nonlocal buffer_lines, slides, current_speaker, current_type, nyanyian_mode
-        if not buffer_lines:
-            return
+@dataclass
+class ClassifiedBlock:
+    raw: RawBlock
+    kind: str
+    slide_type: SlideType
+    section: str = ""
+    speaker: Optional[str] = None
+    metadata_key: Optional[str] = None
+    metadata_value: Optional[str] = None
 
-        # Split buffer into multiple slides if it exceeds max_lines
-        chunks = [buffer_lines[i:i + max_lines_per_slide]
-                  for i in range(0, len(buffer_lines), max_lines_per_slide)]
+    @property
+    def text(self) -> str:
+        return self.raw.text
 
+
+class DOCXReader:
+    def read(self, file_path: str) -> list[RawBlock]:
+        try:
+            import docx
+        except ImportError:
+            return [RawBlock("Error: python-docx not installed.", "Error", 0)]
+
+        document = docx.Document(file_path)
+        blocks: list[RawBlock] = []
+        for index, paragraph in enumerate(document.paragraphs):
+            text = paragraph.text.strip()
+            if text:
+                blocks.append(RawBlock(text=text, style_name=paragraph.style.name, index=index))
+        return blocks
+
+
+class BlockClassifier:
+    SONG_RE = re.compile(r"^(menyanyi|nyanyian|kj|nkb|pkj2?|nnbt|mazmur|hymne|kidung)\b", re.I)
+    SPEAKER_RE = re.compile(r"^(P\+J|P\s*\+\s*J|P|J|L|S)\s*:\s*(.*)", re.I)
+    DATE_RE = re.compile(r"\b(\d{1,2}\s+\w+\s+\d{4}|\d{1,2}[-/]\d{1,2}[-/]\d{2,4})\b", re.I)
+
+    TYPE_BY_PRESET_KEY = {
+        "song_title": SlideType.SONG_TITLE,
+        "notice": SlideType.NOTICE,
+        "prayer": SlideType.PRAYER,
+        "bible_reading": SlideType.BIBLE_READING,
+        "sermon": SlideType.SERMON,
+        "offering": SlideType.OFFERING,
+        "announcement": SlideType.ANNOUNCEMENT,
+        "blessing": SlideType.BLESSING,
+        "closing": SlideType.CLOSING,
+    }
+
+    def __init__(self, preset_name: str = "GMIM Bentuk I") -> None:
+        self.preset_name = preset_name
+        self.preset_keywords = PresetRegistry().keywords(preset_name)
+
+    def classify(self, block: RawBlock, has_cover: bool = False) -> ClassifiedBlock:
+        text = block.text.strip()
+        lower = text.lower()
+        upper = text.upper()
+
+        metadata = self._metadata(text)
+        if metadata:
+            key, value = metadata
+            return ClassifiedBlock(block, "metadata", SlideType.COVER, metadata_key=key, metadata_value=value)
+
+        speaker_match = self.SPEAKER_RE.match(text)
+        if speaker_match:
+            speaker = speaker_match.group(1).upper().replace(" ", "")
+            return ClassifiedBlock(
+                RawBlock(speaker_match.group(2).strip(), block.style_name, block.index),
+                "speaker",
+                SlideType.LITURGY_DIALOG,
+                speaker=speaker,
+            )
+
+        if self.SONG_RE.match(text):
+            return ClassifiedBlock(block, "song_title", SlideType.SONG_TITLE, section=text)
+
+        if self._is_notice(text, lower):
+            return ClassifiedBlock(block, "notice", SlideType.START if "mulai ibadah" in lower else SlideType.NOTICE)
+
+        if not has_cover and self._is_cover_title(upper):
+            return ClassifiedBlock(block, "cover", SlideType.COVER)
+
+        if self._is_heading(block, text):
+            return ClassifiedBlock(block, "section", self._section_type(upper), section=text)
+
+        if not has_cover:
+            return ClassifiedBlock(block, "cover", SlideType.COVER)
+
+        return ClassifiedBlock(block, "body", SlideType.LITURGY_DIALOG)
+
+    def _metadata(self, text: str) -> Optional[tuple[str, str]]:
+        match = re.match(r"^(tema|khadim|pelayan|tanggal|hari/tanggal)\s*:\s*(.+)$", text, re.I)
+        if match:
+            return match.group(1).lower(), match.group(2).strip()
+        if self.DATE_RE.search(text) and len(text) <= 60:
+            return "tanggal", text
+        return None
+
+    def _is_notice(self, text: str, lower: str) -> bool:
+        return (
+            "dimohon untuk" in lower
+            or "mulai ibadah" in lower
+            or text.startswith(("(", "[", "*"))
+        )
+
+    def _is_heading(self, block: RawBlock, text: str) -> bool:
+        return block.style_name.startswith("Heading") or (text.isupper() and len(text) <= 80)
+
+    def _is_cover_title(self, upper: str) -> bool:
+        return "TATA IBADAH" in upper or upper.startswith("IBADAH ")
+
+    def _section_type(self, upper: str) -> SlideType:
+        for key, keywords in self.preset_keywords.items():
+            if any(keyword.upper() in upper for keyword in keywords):
+                return self.TYPE_BY_PRESET_KEY.get(key, SlideType.SECTION)
+        if any(word in upper for word in ("BACAAN", "ALKITAB", "MAZMUR")):
+            return SlideType.BIBLE_READING
+        if any(word in upper for word in ("DOA", "PERSIAPAN", "PANGGILAN", "VOTUM", "SALAM")):
+            return SlideType.PRAYER
+        if any(word in upper for word in ("PERSEMBAHAN", "SYUKUR")):
+            return SlideType.OFFERING
+        if any(word in upper for word in ("KHOTBAH", "FIRMAN", "RENUNGAN")):
+            return SlideType.SERMON
+        if any(word in upper for word in ("PENGUMUMAN", "WARTA")):
+            return SlideType.ANNOUNCEMENT
+        if any(word in upper for word in ("BERKAT", "PENGUTUSAN")):
+            return SlideType.BLESSING
+        if any(word in upper for word in ("PENUTUP", "AMIN")):
+            return SlideType.CLOSING
+        if any(word in upper for word in ("LAGU", "MENYANYI", "KJ ", "NKB ", "PKJ ", "NNBT")):
+            return SlideType.SONG_TITLE
+        return SlideType.SECTION
+
+
+class SectionDetector:
+    def __init__(self, classifier: Optional[BlockClassifier] = None, preset_name: str = "GMIM Bentuk I") -> None:
+        self.classifier = classifier or BlockClassifier(preset_name=preset_name)
+
+    def detect(self, blocks: list[RawBlock]) -> list[ClassifiedBlock]:
+        current_section = ""
+        has_cover = False
+        classified: list[ClassifiedBlock] = []
+
+        for block in blocks:
+            item = self.classifier.classify(block, has_cover=has_cover)
+            if item.kind == "cover":
+                has_cover = True
+            if item.kind in {"section", "song_title"}:
+                current_section = item.section or item.text
+            item.section = item.section or current_section
+            classified.append(item)
+        return classified
+
+
+class SlideBuilder:
+    BODY_TYPE_BY_SECTION = {
+        SlideType.SONG_TITLE: SlideType.SONG_LYRICS,
+        SlideType.BIBLE_READING: SlideType.BIBLE_READING,
+        SlideType.PRAYER: SlideType.PRAYER,
+        SlideType.OFFERING: SlideType.OFFERING,
+        SlideType.SERMON: SlideType.SERMON,
+        SlideType.ANNOUNCEMENT: SlideType.ANNOUNCEMENT,
+        SlideType.BLESSING: SlideType.BLESSING,
+        SlideType.CLOSING: SlideType.CLOSING,
+    }
+
+    def build(self, blocks: list[ClassifiedBlock], max_lines_per_slide: int = 6) -> SlideDeck:
+        deck = SlideDeck()
+        current_body_type = SlideType.LITURGY_DIALOG
+        current_section = ""
+        cover_lines: list[str] = []
+
+        for block in blocks:
+            if block.kind == "metadata":
+                if block.metadata_key:
+                    deck.metadata[block.metadata_key] = block.metadata_value
+                continue
+
+            if block.kind == "cover":
+                cover_lines.extend(split_long_text(block.text))
+                continue
+
+            if cover_lines:
+                deck.slides.append(self._slide(SlideType.COVER, "\n".join(cover_lines), "Cover", "cover"))
+                cover_lines = []
+
+            if block.kind == "notice":
+                deck.slides.append(self._slide(block.slide_type, block.text, current_section, block.slide_type.value))
+                continue
+
+            if block.kind == "song_title":
+                current_section = block.text
+                current_body_type = SlideType.SONG_LYRICS
+                deck.slides.append(self._slide(SlideType.SONG_TITLE, block.text, current_section, "song_title", title=block.text))
+                continue
+
+            if block.kind == "section":
+                current_section = block.text
+                current_body_type = self.BODY_TYPE_BY_SECTION.get(block.slide_type, SlideType.LITURGY_DIALOG)
+                if block.slide_type == SlideType.SONG_TITLE:
+                    current_body_type = SlideType.SONG_LYRICS
+                    deck.slides.append(self._slide(SlideType.SONG_TITLE, block.text, current_section, "song_title", title=block.text))
+                else:
+                    deck.slides.append(self._slide(SlideType.SECTION, block.text, current_section, "section", title=block.text))
+                continue
+
+            if block.kind == "speaker":
+                self._append_chunked(
+                    deck,
+                    slide_type=SlideType.LITURGY_DIALOG,
+                    text=block.text,
+                    section=current_section,
+                    template="liturgy_dialog",
+                    max_lines=max_lines_per_slide,
+                    speaker=block.speaker,
+                )
+                continue
+
+            self._append_chunked(
+                deck,
+                slide_type=current_body_type,
+                text=block.text,
+                section=current_section,
+                template=current_body_type.value,
+                max_lines=max_lines_per_slide,
+            )
+
+        if cover_lines:
+            deck.slides.append(self._slide(SlideType.COVER, "\n".join(cover_lines), "Cover", "cover"))
+
+        if not deck.slides:
+            deck.slides.append(self._slide(SlideType.COVER, "Tidak ada teks ditemukan.", "Cover", "cover"))
+
+        deck.assign_numbers()
+        return deck
+
+    def _append_chunked(
+        self,
+        deck: SlideDeck,
+        slide_type: SlideType,
+        text: str,
+        section: str,
+        template: str,
+        max_lines: int,
+        speaker: Optional[str] = None,
+    ) -> None:
+        lines = split_long_text(text)
+        chunks = [lines[i:i + max_lines] for i in range(0, len(lines), max_lines)] or [[""]]
         for chunk in chunks:
             content = "\n".join(chunk)
-            slide = SlideItem(
-                slide_type=current_type,
-                content=content,
-                speaker=current_speaker,
-                title=current_title,
-                is_nyanyian=nyanyian_mode and current_type == SlideType.LITURGI
+            speaker_lines = [SpeakerLine(speaker, content)] if speaker else []
+            deck.slides.append(
+                self._slide(
+                    slide_type,
+                    content,
+                    section,
+                    template,
+                    speaker=speaker,
+                    speaker_lines=speaker_lines,
+                    is_nyanyian=slide_type == SlideType.SONG_LYRICS,
+                )
             )
-            slides.append(slide)
-        buffer_lines = []
 
-    # Regex to catch song-title lines regardless of Word paragraph style or case.
-    # Matches lines starting with: Menyanyi, Nyanyian, KJ, NKB, PKJ, PKJ2, Mazmur
-    # optionally followed by a number and/or song name.
-    _LAGU_RE = re.compile(
-        r'^(Menyanyi|Nyanyian|KJ|NKB|PKJ2?|Mazmur|Hymne|Kidung)\b', re.IGNORECASE
-    )
+    def _slide(
+        self,
+        slide_type: SlideType,
+        content: str,
+        section: str,
+        template: str,
+        title: Optional[str] = None,
+        speaker: Optional[str] = None,
+        speaker_lines: Optional[list[SpeakerLine]] = None,
+        is_nyanyian: bool = False,
+    ) -> SlideItem:
+        return SlideItem(
+            type=slide_type,
+            section=section,
+            title=title,
+            content=content,
+            speaker=speaker,
+            speaker_lines=speaker_lines or [],
+            template=template,
+            is_nyanyian=is_nyanyian,
+        )
 
-    for p in doc.paragraphs:
-        text = p.text.strip()
-        if not text:
-            continue
 
-        text_lower = text.lower()
+def parse_blocks(blocks: list[RawBlock], max_lines_per_slide: int = 6, preset_name: str = "GMIM Bentuk I") -> SlideDeck:
+    detected = SectionDetector(preset_name=preset_name).detect(blocks)
+    deck = SlideBuilder().build(detected, max_lines_per_slide=max_lines_per_slide)
+    preset = PresetRegistry().get(preset_name)
+    deck.preset_name = preset_name
+    deck.template_name = preset.get("template", deck.template_name)
+    deck.aspect_ratio = preset.get("aspect_ratio", deck.aspect_ratio)
+    return deck
 
-        # --- Detect speaker tags (P:, J:, P+J:) ---
-        speaker_match = re.match(r'^(P\+J|P\s*\+\s*J|P|J|L|S)\s*[:]\s*(.*)', text, re.IGNORECASE)
-        if speaker_match:
-            flush_buffer()
-            current_type = SlideType.LITURGI
-            speaker_tag = speaker_match.group(1).upper().replace(" ", "")
-            content_after_tag = speaker_match.group(2)
-            current_speaker = speaker_tag
-            if content_after_tag:
-                buffer_lines.extend(split_long_text(content_after_tag))
-            continue
 
-        # --- Detect song titles (any paragraph style / any case) ---
-        # e.g. "Menyanyi NKB No. 3 "Terpujilah Allah""
-        if _LAGU_RE.match(text):
-            flush_buffer()
-            current_speaker = None
-            nyanyian_mode = True
-            current_type = SlideType.JUDUL_LAGU
-            current_title = text
-            slides.append(SlideItem(
-                slide_type=SlideType.JUDUL_LAGU, content=text, title=text, is_nyanyian=True
-            ))
-            current_type = SlideType.LIRIK_LAGU
-            continue
+def parse_docx_to_deck(file_path: str, max_lines_per_slide: int = 6, preset_name: str = "GMIM Bentuk I") -> SlideDeck:
+    blocks = DOCXReader().read(file_path)
+    return parse_blocks(blocks, max_lines_per_slide=max_lines_per_slide, preset_name=preset_name)
 
-        # --- Detect headings / section titles ---
-        if p.style.name.startswith('Heading') or text.isupper():
-            flush_buffer()
-            current_speaker = None
 
-            is_lagu = any(kw in text.upper() for kw in ["LAGU", "MENYANYI", "KJ ", "NKB ", "PKJ ", "NYANYIAN"])
-            is_bacaan = any(kw in text.upper() for kw in ["BACAAN", "ALKITAB"])
-            is_penutup = any(kw in text.upper() for kw in ["BERKAT", "PENUTUP"]) or text.upper() == "AMIN"
-            is_doa = any(kw in text.upper() for kw in ["PERSIAPAN", "DOA", "PANGGILAN", "VOTUM", "SALAM"])
-
-            if is_lagu:
-                nyanyian_mode = True
-                current_type = SlideType.JUDUL_LAGU
-                current_title = text
-                slides.append(SlideItem(slide_type=current_type, content=text, title=text, is_nyanyian=True))
-                current_type = SlideType.LIRIK_LAGU  # subsequent text is lyrics
-
-            elif is_bacaan:
-                nyanyian_mode = False
-                current_type = SlideType.BAGIAN
-                slides.append(SlideItem(slide_type=current_type, content=text, title=text))
-                current_type = SlideType.BACAAN
-
-            elif is_penutup:
-                nyanyian_mode = False
-                current_type = SlideType.BAGIAN
-                if text.upper() != "AMIN":
-                    slides.append(SlideItem(slide_type=current_type, content=text, title=text))
-                current_type = SlideType.PENUTUP
-
-            elif is_doa:
-                nyanyian_mode = False
-                current_type = SlideType.BAGIAN
-                slides.append(SlideItem(slide_type=current_type, content=text, title=text))
-                current_type = SlideType.LITURGI
-
-            else:
-                if not slides:
-                    current_type = SlideType.COVER
-                    buffer_lines.extend(split_long_text(text))
-                else:
-                    nyanyian_mode = False
-                    current_type = SlideType.BAGIAN
-                    slides.append(SlideItem(slide_type=current_type, content=text, title=text))
-                    current_type = SlideType.LITURGI
-            continue
-
-        # --- Detect instruction slides ---
-        if "dimohon untuk" in text_lower or "mulai ibadah" in text_lower or text.startswith(("(", "[", "*")):
-            flush_buffer()
-            current_type = SlideType.INSTRUKSI
-            slides.append(SlideItem(slide_type=current_type, content=text))
-            continue
-
-        # Normal text → add to buffer
-        buffer_lines.extend(split_long_text(text))
-
-    flush_buffer()
-
-    # Assign sequential slide numbers
-    for i, slide in enumerate(slides):
-        slide.slide_number = i + 1
-
-    if not slides:
-        slides.append(SlideItem(
-            slide_type=SlideType.COVER,
-            content="Tidak ada teks ditemukan.",
-            slide_number=1
-        ))
-
-    return slides
+def parse_docx(file_path: str, max_lines_per_slide: int = 6, preset_name: str = "GMIM Bentuk I") -> list[SlideItem]:
+    return parse_docx_to_deck(file_path, max_lines_per_slide=max_lines_per_slide, preset_name=preset_name).slides

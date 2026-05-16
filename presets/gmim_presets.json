@@ -1,0 +1,77 @@
+{
+  "GMIM Bentuk I": {
+    "template": "gmim_default",
+    "aspect_ratio": "square",
+    "sections": ["Persiapan", "Votum dan Salam", "Pembacaan Alkitab", "Khotbah", "Persembahan", "Berkat"],
+    "keywords": {
+      "prayer": ["PERSIAPAN", "VOTUM", "SALAM", "DOA"],
+      "bible_reading": ["BACAAN", "ALKITAB", "MAZMUR"],
+      "offering": ["PERSEMBAHAN", "SYUKUR"],
+      "sermon": ["KHOTBAH", "FIRMAN"],
+      "blessing": ["BERKAT", "PENGUTUSAN"]
+    }
+  },
+  "GMIM Bentuk II": {
+    "template": "gmim_default",
+    "aspect_ratio": "square",
+    "sections": ["Menghadap Tuhan", "Firman Tuhan", "Jawaban Jemaat", "Pengutusan"],
+    "keywords": {
+      "prayer": ["MENGHADAP", "PENGAKUAN", "DOA"],
+      "bible_reading": ["FIRMAN", "BACAAN"],
+      "offering": ["JAWABAN", "PERSEMBAHAN"],
+      "blessing": ["PENGUTUSAN", "BERKAT"]
+    }
+  },
+  "GMIM Bentuk III": {
+    "template": "gmim_dark",
+    "aspect_ratio": "square",
+    "sections": ["Pembukaan", "Pelayanan Firman", "Pengucapan Syukur", "Penutup"],
+    "keywords": {
+      "prayer": ["PEMBUKAAN", "DOA"],
+      "bible_reading": ["FIRMAN", "ALKITAB"],
+      "offering": ["SYUKUR", "PERSEMBAHAN"],
+      "closing": ["PENUTUP", "AMIN"]
+    }
+  },
+  "Ibadah Kolom": {
+    "template": "gmim_default",
+    "aspect_ratio": "square",
+    "sections": ["Pembukaan", "Renungan", "Doa Syafaat", "Penutup"],
+    "keywords": {
+      "sermon": ["RENUNGAN", "FIRMAN"],
+      "prayer": ["DOA", "SYAFAAT"],
+      "closing": ["PENUTUP", "BERKAT"]
+    }
+  },
+  "Ibadah Pemuda": {
+    "template": "gmim_dark",
+    "aspect_ratio": "square",
+    "sections": ["Opening", "Praise", "Word", "Response", "Closing"],
+    "keywords": {
+      "song_title": ["PRAISE", "PUJIAN", "MENYANYI"],
+      "sermon": ["WORD", "FIRMAN", "RENUNGAN"],
+      "closing": ["CLOSING", "PENUTUP"]
+    }
+  },
+  "Ibadah ASM": {
+    "template": "gmim_default",
+    "aspect_ratio": "square",
+    "sections": ["Pembukaan", "Pujian", "Cerita Alkitab", "Aktivitas", "Penutup"],
+    "keywords": {
+      "song_title": ["PUJIAN", "MENYANYI"],
+      "bible_reading": ["CERITA ALKITAB", "FIRMAN"],
+      "notice": ["AKTIVITAS", "PERMAINAN"]
+    }
+  },
+  "Ibadah Syukur": {
+    "template": "gmim_default",
+    "aspect_ratio": "square",
+    "sections": ["Pembukaan", "Pujian Syukur", "Firman", "Persembahan Syukur", "Berkat"],
+    "keywords": {
+      "song_title": ["PUJIAN", "MENYANYI"],
+      "sermon": ["FIRMAN", "KHOTBAH"],
+      "offering": ["PERSEMBAHAN SYUKUR", "SYUKUR"],
+      "blessing": ["BERKAT"]
+    }
+  }
+}
