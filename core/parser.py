@@ -4,12 +4,18 @@ from typing import Optional
 
 from core.models import SlideDeck, SlideItem, SlideType, SpeakerLine
 from core.presets import PresetRegistry
-from core.text_splitter import DEFAULT_MAX_CHARS_PER_LINE, normalize_content_line, split_text_to_lines, split_text_to_slides
+from core.text_splitter import (
+    DEFAULT_MAX_CHARS_PER_LINE,
+    max_chars_for_style,
+    normalize_content_line,
+    split_visual_lines_to_chunks,
+    wrap_text_to_visual_lines,
+)
 
 
 def split_long_text(text: str, max_chars_per_line: int = DEFAULT_MAX_CHARS_PER_LINE) -> list[str]:
     """Compatibility wrapper for older tests/imports."""
-    return split_text_to_lines(text, max_chars_per_line=max_chars_per_line)
+    return wrap_text_to_visual_lines(text, max_chars_per_line=max_chars_per_line)
 
 
 def _split_by_words(text: str, max_chars_per_line: int) -> list[str]:
@@ -303,6 +309,21 @@ class SectionDetector:
 
 
 class SlideBuilder:
+    DEFAULT_FONT_SIZE_BY_TYPE = {
+        SlideType.COVER: 60,
+        SlideType.SECTION: 60,
+        SlideType.SONG_TITLE: 60,
+        SlideType.SONG_LYRICS: 48,
+        SlideType.LITURGY_DIALOG: 40,
+        SlideType.PRAYER: 40,
+        SlideType.BIBLE_READING: 40,
+        SlideType.BLESSING: 60,
+        SlideType.CLOSING: 60,
+        SlideType.OFFERING: 40,
+        SlideType.SERMON: 40,
+        SlideType.ANNOUNCEMENT: 40,
+    }
+
     BODY_TYPE_BY_SECTION = {
         SlideType.SONG_TITLE: SlideType.SONG_LYRICS,
         SlideType.BIBLE_READING: SlideType.BIBLE_READING,
@@ -314,7 +335,12 @@ class SlideBuilder:
         SlideType.CLOSING: SlideType.CLOSING,
     }
 
-    def build(self, blocks: list[ClassifiedBlock], max_lines_per_slide: int = 6) -> SlideDeck:
+    def build(
+        self,
+        blocks: list[ClassifiedBlock],
+        max_lines_per_slide: int = 6,
+        aspect_ratio: str = "square",
+    ) -> SlideDeck:
         max_lines_per_slide = max(1, int(max_lines_per_slide or 1))
         deck = SlideDeck()
         current_body_type = SlideType.LITURGY_DIALOG
@@ -334,7 +360,8 @@ class SlideBuilder:
                 return
             chunk: list[SpeakerLine] = []
             active_speaker = ""
-            for line in self._chunk_dialog_lines(dialog_lines):
+            max_chars = self._max_chars_for_slide(SlideType.LITURGY_DIALOG, aspect_ratio)
+            for line in self._chunk_dialog_lines(dialog_lines, max_chars):
                 speaker = line.speaker
                 if speaker:
                     active_speaker = speaker
@@ -375,6 +402,7 @@ class SlideBuilder:
                 section=body_section,
                 template=body_template,
                 max_lines=max_lines_per_slide,
+                aspect_ratio=aspect_ratio,
             )
             body_lines = []
 
@@ -464,13 +492,33 @@ class SlideBuilder:
         deck.assign_numbers()
         return deck
 
-    def _chunk_dialog_lines(self, lines: list[SpeakerLine]) -> list[SpeakerLine]:
+    def _chunk_dialog_lines(
+        self,
+        lines: list[SpeakerLine],
+        max_chars_per_line: Optional[int] = None,
+    ) -> list[SpeakerLine]:
+        max_chars_per_line = max_chars_per_line or self._max_chars_for_slide(SlideType.LITURGY_DIALOG)
         rendered: list[SpeakerLine] = []
-        for speaker_line in lines:
-            wrapped_lines = split_text_to_lines(speaker_line.text)
+        for speaker_line in self._merge_dialog_continuations(lines):
+            speaker = speaker_line.speaker
+            prefix_width = len(f"{speaker} : ") if speaker else 0
+            text_width = max(1, max_chars_per_line - prefix_width)
+            wrapped_lines = wrap_text_to_visual_lines(speaker_line.text, text_width)
             for index, line in enumerate(wrapped_lines):
-                rendered.append(SpeakerLine(speaker_line.speaker if index == 0 else "", line))
+                rendered.append(SpeakerLine(speaker if index == 0 else "", line))
         return rendered
+
+    def _merge_dialog_continuations(self, lines: list[SpeakerLine]) -> list[SpeakerLine]:
+        merged: list[SpeakerLine] = []
+        for line in lines:
+            text = normalize_content_line(line.text)
+            if not text:
+                continue
+            if line.speaker or not merged:
+                merged.append(SpeakerLine(line.speaker, text))
+            else:
+                merged[-1].text = f"{merged[-1].text} {text}"
+        return merged
 
     def _dialog_content(self, lines: list[SpeakerLine]) -> str:
         return "\n".join(
@@ -482,6 +530,12 @@ class SlideBuilder:
     def _is_indented_continuation(self, text: str) -> bool:
         return bool(text and text[0] in {"\t", " ", "\xa0"})
 
+    def _max_chars_for_slide(self, slide_type: SlideType, aspect_ratio: str = "square") -> int:
+        return max_chars_for_style(
+            font_size=self.DEFAULT_FONT_SIZE_BY_TYPE.get(slide_type, 40),
+            aspect_ratio=aspect_ratio,
+        )
+
     def _append_chunked(
         self,
         deck: SlideDeck,
@@ -491,8 +545,14 @@ class SlideBuilder:
         template: str,
         max_lines: int,
         speaker: Optional[str] = None,
+        aspect_ratio: str = "square",
     ) -> None:
-        for content in split_text_to_slides(text, max_lines=max_lines):
+        max_chars = self._max_chars_for_slide(slide_type, aspect_ratio)
+        for content in split_visual_lines_to_chunks(
+            text,
+            max_lines=max_lines,
+            max_chars_per_line=max_chars,
+        ):
             speaker_lines = [SpeakerLine(speaker, content)] if speaker else []
             deck.slides.append(
                 self._slide(
@@ -531,11 +591,16 @@ class SlideBuilder:
 
 def parse_blocks(blocks: list[RawBlock], max_lines_per_slide: int = 6, preset_name: str = "GMIM Bentuk I") -> SlideDeck:
     detected = SectionDetector(preset_name=preset_name).detect(blocks)
-    deck = SlideBuilder().build(detected, max_lines_per_slide=max_lines_per_slide)
     preset = PresetRegistry().get(preset_name)
+    aspect_ratio = preset.get("aspect_ratio", "square")
+    deck = SlideBuilder().build(
+        detected,
+        max_lines_per_slide=max_lines_per_slide,
+        aspect_ratio=aspect_ratio,
+    )
     deck.preset_name = preset_name
     deck.template_name = preset.get("template", deck.template_name)
-    deck.aspect_ratio = preset.get("aspect_ratio", deck.aspect_ratio)
+    deck.aspect_ratio = aspect_ratio
     return deck
 
 

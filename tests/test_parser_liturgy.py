@@ -44,9 +44,11 @@ def test_liturgy_detects_speaker_without_colon_and_groups_until_next_heading():
     liturgy = [slide for slide in deck.slides if slide.type == SlideType.LITURGY_DIALOG]
     reading = [slide for slide in deck.slides if slide.type == SlideType.BIBLE_READING]
 
-    assert len(liturgy) == 2
-    assert [slide.speaker_lines[0].speaker for slide in liturgy] == ["P", "J"]
-    assert "Tetapi TUHAN" in liturgy[0].speaker_lines[0].text
+    assert all(len(slide.content.splitlines()) <= 1 for slide in liturgy)
+    speakers = [line.speaker for slide in liturgy for line in slide.speaker_lines if line.speaker]
+    assert speakers[0] == "P"
+    assert speakers[-1] == "J"
+    assert "Tetapi TUHAN" in " ".join(line.text for slide in liturgy for line in slide.speaker_lines)
     assert reading
 
 
@@ -86,7 +88,9 @@ def test_liturgy_blank_speaker_marker_applies_to_following_line():
     liturgy = [slide for slide in deck.slides if slide.type == SlideType.LITURGY_DIALOG]
 
     assert liturgy[0].speaker_lines[0].speaker == "P"
-    assert liturgy[0].speaker_lines[0].text == "Kasih karunia dan damai sejahtera menyertai kamu."
+    assert " ".join(line.text for line in liturgy[0].speaker_lines[:2]) == (
+        "Kasih karunia dan damai sejahtera menyertai kamu."
+    )
     assert not liturgy[0].speaker_lines[0].text.startswith(":")
 
 

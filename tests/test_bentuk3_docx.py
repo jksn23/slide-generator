@@ -1,7 +1,8 @@
 from pathlib import Path
 
 from core.models import SlideType
-from core.parser import parse_docx_to_deck
+from core.parser import SlideBuilder, parse_docx_to_deck
+from core.text_splitter import wrap_text_to_visual_lines
 
 
 SAMPLE_DOCX = Path(__file__).resolve().parent.parent / "Bentuk 3.docx"
@@ -53,7 +54,9 @@ def test_bentuk3_pj_menyanyi_opens_song_lyrics():
 
 def test_bentuk3_refr_and_indented_song_lines_stay_lyrics():
     deck = _deck()
-    lyric_text = "\n".join(slide.content for slide in deck.slides if slide.type == SlideType.SONG_LYRICS)
+    lyric_text = " ".join(
+        "\n".join(slide.content for slide in deck.slides if slide.type == SlideType.SONG_LYRICS).split()
+    )
     liturgy_text = "\n".join(slide.content for slide in deck.slides if slide.type == SlideType.LITURGY_DIALOG)
 
     assert "Refr Ringan semua di Kalvari" in lyric_text
@@ -63,20 +66,22 @@ def test_bentuk3_refr_and_indented_song_lines_stay_lyrics():
 
 
 def test_bentuk3_indented_dialog_lines_inherit_previous_speaker():
-    effective_lines = []
+    effective_text_by_speaker = {}
     for slide in _deck(max_lines=20).slides:
         last_speaker = ""
         for line in slide.speaker_lines:
             if line.speaker:
                 last_speaker = line.speaker
-            effective_lines.append((line.speaker or last_speaker, line.text))
+            speaker = line.speaker or last_speaker
+            effective_text_by_speaker[speaker] = f"{effective_text_by_speaker.get(speaker, '')} {line.text}"
 
-    assert any(speaker == "P" and "Demikianlah Firman TUHAN." in text for speaker, text in effective_lines)
-    assert any(speaker == "p" and "Firman Allah menasehati" in text for speaker, text in effective_lines)
+    assert "Demikianlah Firman TUHAN." in effective_text_by_speaker["P"]
+    assert "Firman Allah menasehati" in effective_text_by_speaker["p"]
 
 
 def test_bentuk3_applies_max_lines_after_final_chunking():
     deck = _deck(max_lines=6)
+    builder = SlideBuilder()
 
     checked_types = {
         SlideType.SONG_LYRICS,
@@ -87,7 +92,44 @@ def test_bentuk3_applies_max_lines_after_final_chunking():
         SlideType.CLOSING,
     }
     assert all(
-        len(slide.content.splitlines()) <= 6
+        len(
+            wrap_text_to_visual_lines(
+                slide.content,
+                builder._max_chars_for_slide(slide.type, deck.aspect_ratio),
+            )
+        ) <= 6
         for slide in deck.slides
         if slide.type in checked_types
     )
+
+
+def test_bentuk3_long_dialog_and_lyrics_are_visual_line_limited():
+    deck = _deck(max_lines=6)
+    builder = SlideBuilder()
+    targets = [
+        slide
+        for slide in deck.slides
+        if "Saudara-saudara anggota jemaat" in slide.content
+        or "Bekerja bersama-sama" in slide.content
+    ]
+
+    assert targets
+    assert all(
+        len(
+            wrap_text_to_visual_lines(
+                slide.content,
+                builder._max_chars_for_slide(slide.type, deck.aspect_ratio),
+            )
+        ) <= 6
+        for slide in targets
+    )
+
+
+def test_bentuk3_chunk_boundaries_do_not_cut_words():
+    deck = _deck(max_lines=6)
+    content = "\n".join(slide.content for slide in deck.slides)
+
+    assert "Saudara-saudara" in content
+    assert "bersama-sama" in content
+    assert "Saudara-\nsaudara" not in content
+    assert "bersama-\nsama" not in content
