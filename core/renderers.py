@@ -14,6 +14,7 @@ from core.template_engine import TemplateResolver
 
 
 PPTX_NS = "http://schemas.openxmlformats.org/presentationml/2006/main"
+PPTX_P14_NS = "http://schemas.microsoft.com/office/powerpoint/2010/main"
 _PPTX_SUPPORTED = {".bmp", ".gif", ".jpeg", ".jpg", ".png", ".tiff", ".tif", ".wmf"}
 
 
@@ -186,6 +187,22 @@ class TextRenderer:
 
 
 class PPTXRenderer:
+    TRANSITION_XML = {
+        "fade": '<p:transition xmlns:p="{ns}" spd="med"><p:fade/></p:transition>',
+        "wipe": '<p:transition xmlns:p="{ns}" spd="med"><p:wipe dir="l"/></p:transition>',
+        "push": '<p:transition xmlns:p="{ns}" spd="med"><p:push dir="l"/></p:transition>',
+        "zoom": '<p:transition xmlns:p="{ns}" spd="med"><p:zoom dir="out"/></p:transition>',
+        "morph": (
+            '<p:transition xmlns:p="{ns}" xmlns:p14="{p14_ns}" spd="med">'
+            '<p:extLst>'
+            '<p:ext uri="{{B2D3F22D-AB1C-4A42-A4DB-59C51D907E4D}}">'
+            '<p14:morph transition="byObject"/>'
+            '</p:ext>'
+            '</p:extLst>'
+            '</p:transition>'
+        ),
+    }
+
     def __init__(self, template_name: str = "gmim_default") -> None:
         self.resolver = TemplateResolver(template_name)
         self.background_renderer = BackgroundRenderer()
@@ -224,11 +241,5 @@ class PPTXRenderer:
         tag = f"{{{PPTX_NS}}}transition"
         for existing in slide_xml.findall(tag):
             slide_xml.remove(existing)
-        transition_xml = {
-            "fade": '<p:transition xmlns:p="{ns}" spd="med"><p:fade/></p:transition>',
-            "wipe": '<p:transition xmlns:p="{ns}" spd="med"><p:wipe dir="l"/></p:transition>',
-            "push": '<p:transition xmlns:p="{ns}" spd="med"><p:push dir="l"/></p:transition>',
-            "zoom": '<p:transition xmlns:p="{ns}" spd="med"><p:zoom dir="out"/></p:transition>',
-        }.get(transition)
-        if transition_xml:
-            slide_xml.append(etree.fromstring(transition_xml.format(ns=PPTX_NS)))
+        transition_xml = self.TRANSITION_XML.get(transition, self.TRANSITION_XML["fade"])
+        slide_xml.append(etree.fromstring(transition_xml.format(ns=PPTX_NS, p14_ns=PPTX_P14_NS)))

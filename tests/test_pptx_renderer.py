@@ -1,4 +1,5 @@
 from pptx import Presentation
+from zipfile import ZipFile
 
 from core.generator import generate_pptx
 from core.models import SlideItem, SlideType, SpeakerLine
@@ -124,6 +125,52 @@ def test_generate_pptx_applies_ui_font_overrides(tmp_path):
     run = text_shape.text_frame.paragraphs[0].runs[0]
     assert run.font.name == "Arial"
     assert run.font.size.pt == 72
+
+
+def test_generate_pptx_applies_font_families_by_slide_category(tmp_path):
+    output = tmp_path / "font_categories.pptx"
+
+    generate_pptx(
+        [
+            SlideItem(type=SlideType.SECTION, content="BAGIAN"),
+            SlideItem(type=SlideType.SONG_TITLE, content="Menyanyi"),
+            SlideItem(type=SlideType.SONG_LYRICS, content="Haleluya"),
+            SlideItem(type=SlideType.LITURGY_DIALOG, content="P : Amin", speaker_lines=[SpeakerLine("P", "Amin")]),
+        ],
+        str(output),
+        font_families={
+            "heading": "Arial",
+            "song_title": "Calibri",
+            "lyric": "Tahoma",
+            "liturgi": "Verdana",
+        },
+    )
+
+    presentation = Presentation(str(output))
+    fonts = []
+    for slide in presentation.slides:
+        shape = [shape for shape in slide.shapes if hasattr(shape, "text") and shape.text][-1]
+        run = next(run for paragraph in shape.text_frame.paragraphs for run in paragraph.runs if run.text)
+        fonts.append(run.font.name)
+
+    assert fonts == ["Arial", "Calibri", "Tahoma", "Verdana"]
+
+
+def test_generate_pptx_supports_morph_transition_without_corrupting_file(tmp_path):
+    output = tmp_path / "morph.pptx"
+
+    generate_pptx(
+        [SlideItem(type=SlideType.COVER, content="TATA IBADAH")],
+        str(output),
+        transition="morph",
+    )
+
+    presentation = Presentation(str(output))
+    assert len(presentation.slides) == 1
+    with ZipFile(output) as archive:
+        slide_xml = archive.read("ppt/slides/slide1.xml").decode("utf-8")
+    assert "morph" in slide_xml
+    assert "p14" in slide_xml
 
 
 def test_preview_and_export_read_font_size_from_slide_metadata(tmp_path):

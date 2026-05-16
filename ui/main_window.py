@@ -19,13 +19,28 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from core.generator import generate_pptx
+from core.generator import font_category_for_slide, generate_pptx
 from core.deck_editor import DeckEditor
 from core.models import SlideType
 from core.parser import parse_docx_to_deck
 from core.presets import PresetRegistry
 from ui.components import PreviewSlideItemWidget, VisualSlidePreviewWidget
+from ui.fullscreen_preview import FullscreenPreviewDialog
 from ui.styles import get_stylesheet
+
+
+TRANSITION_LABELS = {
+    "Tanpa Transisi": None,
+    "Fade": "fade",
+    "Wipe (Kiri ke Kanan)": "wipe",
+    "Push (Kiri ke Kanan)": "push",
+    "Zoom": "zoom",
+    "Morph": "morph",
+}
+
+
+def transition_value_from_label(label: str):
+    return TRANSITION_LABELS.get(label)
 
 
 class MainWindow(QMainWindow):
@@ -117,15 +132,15 @@ class MainWindow(QMainWindow):
 
         self.spin_lines = self._spin(layout, "Max baris per slide:", 1, 15, 6)
 
-        self.combo_font = QComboBox()
         families = QFontDatabase().families()
-        self.combo_font.addItems(families)
-        if "Segoe UI" in families:
-            self.combo_font.setCurrentText("Segoe UI")
-        elif "Arial" in families:
-            self.combo_font.setCurrentText("Arial")
-        self.combo_font.currentTextChanged.connect(self.refresh_selected_preview)
-        self._labeled_widget(layout, "Font:", self.combo_font)
+        self.combo_font_heading = self._font_combo(families)
+        self.combo_font_song_title = self._font_combo(families)
+        self.combo_font_lyric = self._font_combo(families)
+        self.combo_font_liturgi = self._font_combo(families)
+        self._labeled_widget(layout, "Font heading/section:", self.combo_font_heading)
+        self._labeled_widget(layout, "Font judul lagu:", self.combo_font_song_title)
+        self._labeled_widget(layout, "Font lirik lagu:", self.combo_font_lyric)
+        self._labeled_widget(layout, "Font liturgi/bacaan:", self.combo_font_liturgi)
 
         self.spin_font_title = self._spin(layout, "Ukuran font judul:", 10, 150, 60)
         self.spin_font_lyric = self._spin(layout, "Ukuran font lirik:", 10, 150, 48)
@@ -135,7 +150,7 @@ class MainWindow(QMainWindow):
         self.spin_font_liturgi.valueChanged.connect(self.refresh_selected_preview)
 
         self.combo_transition = QComboBox()
-        self.combo_transition.addItems(["Tanpa Transisi", "Fade", "Wipe (Kiri ke Kanan)", "Push (Kiri ke Kanan)", "Zoom"])
+        self.combo_transition.addItems(list(TRANSITION_LABELS.keys()))
         self._labeled_widget(layout, "Efek Transisi Slide:", self.combo_transition)
 
         self.combo_template = QComboBox()
@@ -243,10 +258,14 @@ class MainWindow(QMainWindow):
         self.btn_preview = QPushButton("Buat Preview")
         self.btn_preview.setProperty("class", "SecondaryButton")
         self.btn_preview.clicked.connect(self.generate_preview)
+        self.btn_fullscreen_preview = QPushButton("Preview Full Screen")
+        self.btn_fullscreen_preview.setProperty("class", "SecondaryButton")
+        self.btn_fullscreen_preview.clicked.connect(self.show_fullscreen_preview)
         self.btn_generate = QPushButton("Generate PowerPoint")
         self.btn_generate.setProperty("class", "PrimaryButton")
         self.btn_generate.clicked.connect(self.generate_ppt)
         layout.addWidget(self.btn_preview)
+        layout.addWidget(self.btn_fullscreen_preview)
         layout.addWidget(self.btn_generate)
         layout.addStretch()
         return footer
@@ -264,11 +283,29 @@ class MainWindow(QMainWindow):
         self._labeled_widget(layout, label_text, spin)
         return spin
 
+    def _font_combo(self, families):
+        combo = QComboBox()
+        combo.addItems(families)
+        if "Segoe UI" in families:
+            combo.setCurrentText("Segoe UI")
+        elif "Arial" in families:
+            combo.setCurrentText("Arial")
+        combo.currentTextChanged.connect(self.refresh_selected_preview)
+        return combo
+
     def _get_font_sizes(self):
         return {
             "title": self.spin_font_title.value(),
             "lyric": self.spin_font_lyric.value(),
             "liturgi": self.spin_font_liturgi.value(),
+        }
+
+    def _get_font_families(self):
+        return {
+            "heading": self.combo_font_heading.currentText(),
+            "song_title": self.combo_font_song_title.currentText(),
+            "lyric": self.combo_font_lyric.currentText(),
+            "liturgi": self.combo_font_liturgi.currentText(),
         }
 
     def _font_size_for_slide(self, slide):
@@ -287,7 +324,7 @@ class MainWindow(QMainWindow):
 
     def apply_ui_style_to_slide(self, slide):
         style = slide.metadata.setdefault("style", {})
-        style["font_family"] = self.combo_font.currentText()
+        style["font_family"] = self._get_font_families()[font_category_for_slide(slide.type)]
         style["font_size"] = self._font_size_for_slide(slide)
 
     def apply_ui_style_to_slides(self):
@@ -415,6 +452,21 @@ class MainWindow(QMainWindow):
         self.refresh_preview_list()
         self.show_slide_preview(self.selected_slide)
 
+    def show_fullscreen_preview(self):
+        if not self.slides:
+            QMessageBox.warning(self, "Peringatan", "Buat preview terlebih dahulu sebelum preview full screen.")
+            return
+        self.apply_ui_style_to_slides()
+        index = self.slides.index(self.selected_slide) if self.selected_slide in self.slides else 0
+        dialog = FullscreenPreviewDialog(
+            self.slides,
+            start_index=index,
+            template_name=self.combo_template.currentText(),
+            aspect_ratio=self._get_aspect_ratio(),
+            parent=self,
+        )
+        dialog.exec_()
+
     def generate_ppt(self):
         if not self.slides:
             QMessageBox.warning(self, "Peringatan", "Buat preview terlebih dahulu sebelum generate PowerPoint.")
@@ -424,13 +476,7 @@ class MainWindow(QMainWindow):
         if not save_path:
             return
 
-        transition = {
-            "Tanpa Transisi": None,
-            "Fade": "fade",
-            "Wipe (Kiri ke Kanan)": "wipe",
-            "Push (Kiri ke Kanan)": "push",
-            "Zoom": "zoom",
-        }.get(self.combo_transition.currentText())
+        transition = transition_value_from_label(self.combo_transition.currentText())
 
         self.statusBar().showMessage("Sedang membuat file PowerPoint...")
         try:
@@ -438,7 +484,7 @@ class MainWindow(QMainWindow):
             generate_pptx(
                 slides=self.slides,
                 output_path=save_path,
-                font_family=self.combo_font.currentText(),
+                font_families=self._get_font_families(),
                 font_sizes=self._get_font_sizes(),
                 transition=transition,
                 template_name=self.combo_template.currentText(),

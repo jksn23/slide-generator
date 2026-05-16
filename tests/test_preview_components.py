@@ -1,4 +1,6 @@
 from core.models import SlideItem, SlideType
+from ui.fullscreen_preview import FullscreenPreviewDialog
+from ui.main_window import transition_value_from_label
 from ui.components import PreviewSlideItemWidget, VisualSlidePreviewWidget
 
 
@@ -26,3 +28,12 @@ def test_preview_uses_same_speaker_color_contract_as_template():
     assert VisualSlidePreviewWidget.speaker_color("J", style) == "#F2C94C"
     assert VisualSlidePreviewWidget.speaker_color("P+J", style) == "#F2C94C"
     assert VisualSlidePreviewWidget.speaker_color("S", style) == "#FFFFFF"
+
+
+def test_transition_mapping_supports_morph():
+    assert transition_value_from_label("Morph") == "morph"
+    assert transition_value_from_label("Tanpa Transisi") is None
+
+
+def test_fullscreen_preview_dialog_import_contract():
+    assert FullscreenPreviewDialog.__name__ == "FullscreenPreviewDialog"
