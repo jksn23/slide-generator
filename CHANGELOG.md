@@ -1,5 +1,37 @@
 # Changelog
 
+## V2 Tahap 1-2 Awal - Service JSON dan Universal Parser
+
+Ringkasan:
+- Menambahkan model JSON `ServiceDocument`, `ServiceSection`, dan `ServiceItem` sebagai layer struktur tata ibadah sebelum menjadi slide.
+- Memperluas `RawBlock` dengan `source_type`, `page_number`, `paragraph_index`, `style`, dan `metadata` untuk mendukung reader DOCX/PDF berikutnya tanpa merusak constructor lama.
+- Menambahkan `UniversalParser` untuk mengubah `RawBlock` menjadi `ServiceDocument`.
+- Menambahkan `ServiceSlideBuilder` untuk mengubah `ServiceDocument` menjadi `SlideDeck`/`SlideItem` yang tetap editable.
+- Mempertahankan API lama `parse_docx`, `parse_docx_to_deck`, dan pipeline preview/export yang sudah berjalan.
+- Menambahkan fallback keyword kosong untuk preset yang belum ada, sehingga bentuk ibadah baru seperti `GMIM Bentuk V` dapat masuk ke parser universal tanpa langsung gagal.
+
+File yang diubah:
+- `core/models.py`
+- `core/parser.py`
+- `core/universal_parser.py`
+- `core/slide_builder.py`
+- `tests/test_slide_model.py`
+- `tests/test_universal_parser.py`
+
+Test yang dijalankan:
+- `python -m pytest tests\test_slide_model.py tests\test_universal_parser.py tests\test_parser_pipeline.py tests\test_slide_builder.py`
+- `.\venv\Scripts\python.exe -m pytest`
+- `.\venv\Scripts\python.exe -m compileall core tests`
+
+Hasil test:
+- Lulus: 15 passed untuk subset fondasi.
+- Lulus: 67 passed untuk full regression via virtualenv proyek.
+- Compileall `core` dan `tests` lulus.
+
+Risiko tersisa:
+- Pipeline UI lama belum memakai `ServiceDocument`; tahap berikutnya perlu mengintegrasikan jalur baru secara bertahap.
+- PDF reader dan OCR belum dikerjakan sesuai urutan prioritas panduan v2.
+
 ## Perbaikan - Parser Style-Aware dan Dialog Liturgi
 
 Ringkasan:

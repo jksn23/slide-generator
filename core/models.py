@@ -121,6 +121,130 @@ class SlideBackground:
         raise TypeError(f"Unsupported background value: {value!r}")
 
 
+@dataclass
+class ServiceItem:
+    type: str
+    raw_text: str
+    id: str = ""
+    title: Optional[str] = None
+    content: Optional[str] = None
+    speaker: Optional[str] = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.id:
+            self.id = f"item-{uuid.uuid4().hex[:10]}"
+        self.type = str(self.type or "body")
+        self.raw_text = self.raw_text or ""
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "type": self.type,
+            "title": self.title,
+            "content": self.content,
+            "speaker": self.speaker,
+            "raw_text": self.raw_text,
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "ServiceItem":
+        return cls(
+            id=data.get("id", ""),
+            type=data.get("type", "body"),
+            title=data.get("title"),
+            content=data.get("content"),
+            speaker=data.get("speaker"),
+            raw_text=data.get("raw_text", data.get("content", "")),
+            metadata=data.get("metadata") or {},
+        )
+
+
+@dataclass
+class ServiceSection:
+    title: str
+    type: str = "section"
+    id: str = ""
+    content: list[str] = field(default_factory=list)
+    items: list[ServiceItem] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.id:
+            self.id = f"section-{uuid.uuid4().hex[:10]}"
+        self.type = str(self.type or "section")
+        self.title = self.title or ""
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "type": self.type,
+            "title": self.title,
+            "content": list(self.content),
+            "items": [item.to_dict() for item in self.items],
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "ServiceSection":
+        return cls(
+            id=data.get("id", ""),
+            type=data.get("type", "section"),
+            title=data.get("title", ""),
+            content=list(data.get("content") or []),
+            items=[ServiceItem.from_dict(item) for item in data.get("items", [])],
+            metadata=data.get("metadata") or {},
+        )
+
+
+@dataclass
+class ServiceDocument:
+    service_form: str = ""
+    title: str = ""
+    theme_monthly: Optional[str] = None
+    theme_weekly: Optional[str] = None
+    bible_reading: Optional[str] = None
+    church_name: Optional[str] = None
+    date: Optional[str] = None
+    sections: list[ServiceSection] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict:
+        return {
+            "service_form": self.service_form,
+            "title": self.title,
+            "theme_monthly": self.theme_monthly,
+            "theme_weekly": self.theme_weekly,
+            "bible_reading": self.bible_reading,
+            "church_name": self.church_name,
+            "date": self.date,
+            "sections": [section.to_dict() for section in self.sections],
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "ServiceDocument":
+        return cls(
+            service_form=data.get("service_form", ""),
+            title=data.get("title", ""),
+            theme_monthly=data.get("theme_monthly"),
+            theme_weekly=data.get("theme_weekly"),
+            bible_reading=data.get("bible_reading"),
+            church_name=data.get("church_name"),
+            date=data.get("date"),
+            sections=[ServiceSection.from_dict(section) for section in data.get("sections", [])],
+            metadata=data.get("metadata") or {},
+        )
+
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict(), ensure_ascii=False, indent=2)
+
+    @classmethod
+    def from_json(cls, value: str) -> "ServiceDocument":
+        return cls.from_dict(json.loads(value))
+
+
 @dataclass(init=False)
 class SlideItem:
     id: str

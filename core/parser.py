@@ -1,6 +1,6 @@
 import re
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Any, Optional
 
 from core.models import SlideDeck, SlideItem, SlideType, SpeakerLine
 from core.presets import PresetRegistry
@@ -43,10 +43,54 @@ class RawBlock:
     has_bold: bool = False
     max_font_size: Optional[float] = None
     uppercase_ratio: float = 0.0
+    source_type: str = "docx"
+    page_number: Optional[int] = None
+    paragraph_index: Optional[int] = None
+    style: Optional[str] = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        if self.style is None:
+            self.style = self.style_name or None
+        elif not self.style_name:
+            self.style_name = self.style
+        if self.paragraph_index is None:
+            self.paragraph_index = self.index
         if not self.uppercase_ratio:
             self.uppercase_ratio = _uppercase_ratio(self.text)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "text": self.text,
+            "source_type": self.source_type,
+            "page_number": self.page_number,
+            "paragraph_index": self.paragraph_index,
+            "style": self.style,
+            "style_name": self.style_name,
+            "index": self.index,
+            "alignment": self.alignment,
+            "has_bold": self.has_bold,
+            "max_font_size": self.max_font_size,
+            "uppercase_ratio": self.uppercase_ratio,
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "RawBlock":
+        return cls(
+            text=data.get("text", ""),
+            source_type=data.get("source_type", "docx"),
+            page_number=data.get("page_number"),
+            paragraph_index=data.get("paragraph_index"),
+            style=data.get("style"),
+            style_name=data.get("style_name", ""),
+            index=int(data.get("index", data.get("paragraph_index") or 0)),
+            alignment=data.get("alignment"),
+            has_bold=bool(data.get("has_bold", False)),
+            max_font_size=data.get("max_font_size"),
+            uppercase_ratio=float(data.get("uppercase_ratio", 0.0)),
+            metadata=data.get("metadata") or {},
+        )
 
 
 def _uppercase_ratio(text: str) -> float:
@@ -107,7 +151,12 @@ class BlockClassifier:
     SPEAKER_RE = re.compile(r"^(P|J|P\+J|PK|p|Calon|L|S)\s*[:\t ]+(.*)$")
     DATE_RE = re.compile(r"\b(\d{1,2}\s+\w+\s+\d{4}|\d{1,2}[-/]\d{1,2}[-/]\d{2,4})\b", re.I)
     SECTION_KEYWORDS = {
+        "PEMBUKAAN": SlideType.LITURGY_DIALOG,
         "PERSIAPAN": SlideType.LITURGY_DIALOG,
+        "TAHBISAN": SlideType.LITURGY_DIALOG,
+        "BERITA ANUGERAH ALLAH": SlideType.PRAYER,
+        "PENGANTAR PEMBACAAN ALKITAB DAN KHOTBAH": SlideType.BIBLE_READING,
+        "PEMBACAAN ALKITAB DAN KHOTBAH": SlideType.BIBLE_READING,
         "NYANYIAN MASUK": SlideType.LITURGY_DIALOG,
         "NAS PEMBIMBING": SlideType.BIBLE_READING,
         "TAHBISAN DAN SALAM": SlideType.LITURGY_DIALOG,
@@ -121,6 +170,9 @@ class BlockClassifier:
         "PUJI-PUJIAN": SlideType.SONG_TITLE,
         "FIRMAN TUHAN": SlideType.SERMON,
         "PERSEMBAHAN": SlideType.OFFERING,
+        "DOA SYUKUR": SlideType.PRAYER,
+        "DOA SYAFAAT": SlideType.PRAYER,
+        "KOLEKTE EXTRA": SlideType.OFFERING,
         "PELANTIKAN PANITIA PEMILIHAN PELAYAN KHUSUS": SlideType.LITURGY_DIALOG,
         "PENGAJARAN": SlideType.LITURGY_DIALOG,
         "PERTANYAAN-PERTANYAAN PELANTIKAN": SlideType.LITURGY_DIALOG,
@@ -129,6 +181,7 @@ class BlockClassifier:
         "NASEHAT DAN PENYERAHAN TUGAS-TUGAS": SlideType.LITURGY_DIALOG,
         "DOA UMUM": SlideType.PRAYER,
         "NYANYIAN PENUTUP": SlideType.LITURGY_DIALOG,
+        "PENUTUP": SlideType.CLOSING,
         "SALAM DAN BERKAT": SlideType.BLESSING,
         "BERKAT": SlideType.BLESSING,
         "SAAT TEDUH": SlideType.PRAYER,
@@ -150,7 +203,10 @@ class BlockClassifier:
 
     def __init__(self, preset_name: str = "GMIM Bentuk I") -> None:
         self.preset_name = preset_name
-        self.preset_keywords = PresetRegistry().keywords(preset_name)
+        try:
+            self.preset_keywords = PresetRegistry().keywords(preset_name)
+        except KeyError:
+            self.preset_keywords = {}
 
     def classify(self, block: RawBlock, has_cover: bool = False) -> ClassifiedBlock:
         text = block.text.strip()
