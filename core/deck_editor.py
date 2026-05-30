@@ -17,6 +17,7 @@ class DeckEditor:
         content: str | None = None,
         slide_type: Any = None,
         section: str | None = None,
+        template: str | None = None,
         background_image: str | None = None,
         background_color: str | None = None,
         alignment: str | None = None,
@@ -33,6 +34,8 @@ class DeckEditor:
             slide.template = slide.type.value
         if section is not None:
             slide.section = section
+        if template is not None:
+            slide.template = template
         if background_image:
             slide.bg_image = background_image
         if background_color:

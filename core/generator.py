@@ -1,7 +1,11 @@
 from copy import deepcopy
+import logging
 
 from core.models import SlideType
 from core.renderers import PPTXRenderer
+
+
+logger = logging.getLogger(__name__)
 
 
 def font_category_for_slide(slide_type: SlideType) -> str:
@@ -71,6 +75,7 @@ def generate_pptx(
     template_name: str = "gmim_default",
     aspect_ratio: str = "square",
 ):
+    logger.info("Exporting %s slide(s) to %s", len(slides), output_path)
     renderer = PPTXRenderer(template_name=template_name)
     rendered_slides = _apply_font_overrides(slides, font_family, font_sizes, font_families=font_families)
     renderer.render(rendered_slides, output_path=output_path, aspect_ratio=aspect_ratio, transition=transition)

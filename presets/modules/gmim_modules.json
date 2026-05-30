@@ -1,0 +1,54 @@
+{
+  "modules": [
+    {
+      "id": "baptisan_kudus",
+      "name": "Baptisan Kudus",
+      "keywords": ["Baptisan Kudus", "Baptisan", "anak baptisan"],
+      "default_sections": ["Baptisan Kudus"],
+      "default_slide_types": {"Baptisan Kudus": "liturgy_dialog"},
+      "default_template": "gmim_default",
+      "insertion_rules": {"after": "Pemberitaan Firman"},
+      "metadata": {"category": "sacrament"}
+    },
+    {
+      "id": "pelantikan",
+      "name": "Pelantikan",
+      "keywords": ["Pelantikan", "Pelantikan Panitia", "Pelantikan Pelayan Khusus"],
+      "default_sections": ["Pelantikan"],
+      "default_slide_types": {"Pelantikan": "liturgy_dialog"},
+      "default_template": "gmim_default",
+      "insertion_rules": {"after": "Khotbah"},
+      "metadata": {"category": "service_event"}
+    },
+    {
+      "id": "hut_jemaat",
+      "name": "HUT Jemaat",
+      "keywords": ["HUT Jemaat", "Hari Ulang Tahun Jemaat", "Ulang Tahun Jemaat"],
+      "default_sections": ["HUT Jemaat"],
+      "default_slide_types": {"HUT Jemaat": "announcement"},
+      "default_template": "gmim_default",
+      "insertion_rules": {"after": "Warta Jemaat"},
+      "metadata": {"category": "celebration"}
+    },
+    {
+      "id": "perjamuan_kudus",
+      "name": "Perjamuan Kudus",
+      "keywords": ["Perjamuan Kudus", "Perjamuan"],
+      "default_sections": ["Perjamuan Kudus"],
+      "default_slide_types": {"Perjamuan Kudus": "liturgy_dialog"},
+      "default_template": "gmim_default",
+      "insertion_rules": {"after": "Pengakuan Dosa"},
+      "metadata": {"category": "sacrament"}
+    },
+    {
+      "id": "peneguhan_sidi",
+      "name": "Peneguhan Sidi",
+      "keywords": ["Peneguhan Sidi", "Sidi Jemaat"],
+      "default_sections": ["Peneguhan Sidi"],
+      "default_slide_types": {"Peneguhan Sidi": "liturgy_dialog"},
+      "default_template": "gmim_default",
+      "insertion_rules": {"after": "Khotbah"},
+      "metadata": {"category": "service_event"}
+    }
+  ]
+}

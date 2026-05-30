@@ -5,7 +5,7 @@ from typing import Optional
 from core.models import SlideDeck, SlideItem, SlideType, SpeakerLine
 from core.presets import PresetRegistry
 from core.raw_block import RawBlock
-from core.readers import DOCXReader
+from core.readers import DOCXReader, read_document_blocks
 from core.text_splitter import (
     DEFAULT_MAX_CHARS_PER_LINE,
     max_chars_for_style,
@@ -136,13 +136,13 @@ class BlockClassifier:
             speaker_text = normalize_content_line(speaker_match.group(2).strip().lstrip(" ,.-"))
             if self._is_speaker_song_title_text(speaker_text):
                 return ClassifiedBlock(
-                    RawBlock(speaker_text, block.style_name, block.index),
+                    self._raw_like(block, speaker_text),
                     "song_title",
                     SlideType.SONG_TITLE,
                     section=speaker_text,
                 )
             return ClassifiedBlock(
-                RawBlock(speaker_text, block.style_name, block.index),
+                self._raw_like(block, speaker_text),
                 "speaker",
                 SlideType.LITURGY_DIALOG,
                 speaker=speaker,
@@ -153,7 +153,7 @@ class BlockClassifier:
 
         if self._is_song_title_text(text):
             return ClassifiedBlock(
-                RawBlock(text, block.style_name, block.index),
+                self._raw_like(block, text),
                 "song_title",
                 SlideType.SONG_TITLE,
                 section=text,
@@ -161,17 +161,17 @@ class BlockClassifier:
 
         if self._is_notice(text, lower):
             return ClassifiedBlock(
-                RawBlock(text, block.style_name, block.index),
+                self._raw_like(block, text),
                 "notice",
                 SlideType.START if "mulai ibadah" in lower else SlideType.NOTICE,
             )
 
         if not has_cover and self._is_cover_title(upper):
-            return ClassifiedBlock(RawBlock(text, block.style_name, block.index), "cover", SlideType.COVER)
+            return ClassifiedBlock(self._raw_like(block, text), "cover", SlideType.COVER)
 
         if self._is_heading(block, text):
             return ClassifiedBlock(
-                RawBlock(text, block.style_name, block.index),
+                self._raw_like(block, text),
                 "section",
                 self._section_type(upper),
                 section=text,
@@ -181,6 +181,22 @@ class BlockClassifier:
             return ClassifiedBlock(block, "cover", SlideType.COVER)
 
         return ClassifiedBlock(block, "body", SlideType.LITURGY_DIALOG)
+
+    def _raw_like(self, block: RawBlock, text: str) -> RawBlock:
+        return RawBlock(
+            text=text,
+            style_name=block.style_name,
+            index=block.index,
+            alignment=block.alignment,
+            has_bold=block.has_bold,
+            max_font_size=block.max_font_size,
+            uppercase_ratio=block.uppercase_ratio,
+            source_type=block.source_type,
+            page_number=block.page_number,
+            paragraph_index=block.paragraph_index,
+            style=block.style,
+            metadata=dict(block.metadata),
+        )
 
     def _metadata(self, text: str) -> Optional[tuple[str, str]]:
         match = re.match(
@@ -598,6 +614,16 @@ def parse_blocks(blocks: list[RawBlock], max_lines_per_slide: int = 6, preset_na
 
 def parse_docx_to_deck(file_path: str, max_lines_per_slide: int = 6, preset_name: str = "GMIM Bentuk I") -> SlideDeck:
     blocks = DOCXReader().read(file_path)
+    return parse_blocks(blocks, max_lines_per_slide=max_lines_per_slide, preset_name=preset_name)
+
+
+def parse_file_to_deck(
+    file_path: str,
+    max_lines_per_slide: int = 6,
+    preset_name: str = "GMIM Bentuk I",
+    use_ocr: bool = False,
+) -> SlideDeck:
+    blocks = read_document_blocks(file_path, use_ocr=use_ocr)
     return parse_blocks(blocks, max_lines_per_slide=max_lines_per_slide, preset_name=preset_name)
 
 

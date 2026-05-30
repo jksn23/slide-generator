@@ -186,7 +186,11 @@ class PreviewSlideItemWidget(QWidget):
         preview = QLabel(self.slide_item.content[:120])
         preview.setWordWrap(True)
         preview.setStyleSheet("color:#1E1E1E; border:none;")
+        section = QLabel(self.slide_item.section or "Tanpa section")
+        section.setWordWrap(True)
+        section.setStyleSheet("color:#5F665F; border:none; font-size:11px;")
         layout.addLayout(top)
+        layout.addWidget(section)
         layout.addWidget(preview)
 
     def mousePressEvent(self, event):

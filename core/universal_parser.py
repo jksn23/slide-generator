@@ -2,9 +2,10 @@ import re
 from typing import Optional
 
 from core.models import ServiceDocument, ServiceItem, ServiceSection, SlideType
+from core.modules import ModuleDetector
 from core.parser import ClassifiedBlock, SectionDetector
 from core.raw_block import RawBlock
-from core.readers import DOCXReader
+from core.readers import DOCXReader, read_document_blocks
 from core.text_splitter import normalize_content_line
 
 
@@ -14,6 +15,7 @@ class UniversalParser:
     def __init__(self, preset_name: str = "GMIM Bentuk I") -> None:
         self.preset_name = preset_name
         self.detector = SectionDetector(preset_name=preset_name)
+        self.module_detector = ModuleDetector()
 
     def parse(self, blocks: list[RawBlock]) -> ServiceDocument:
         document = ServiceDocument(
@@ -86,6 +88,7 @@ class UniversalParser:
             current_section.items.append(self._item(block, item_type, content=content, speaker=speaker))
             pending_speaker = None
 
+        self.module_detector.detect(document)
         return document
 
     def _apply_metadata(self, document: ServiceDocument, block: ClassifiedBlock) -> None:
@@ -154,19 +157,21 @@ class UniversalParser:
         content: Optional[str] = None,
         speaker: Optional[str] = None,
     ) -> ServiceItem:
+        metadata = {
+            "source_kind": block.kind,
+            "source_type": block.raw.source_type,
+            "page_number": block.raw.page_number,
+            "paragraph_index": block.raw.paragraph_index,
+            "style": block.raw.style,
+        }
+        metadata.update(block.raw.metadata)
         return ServiceItem(
             type=item_type,
             title=title,
             content=content,
             speaker=speaker,
             raw_text=block.text,
-            metadata={
-                "source_kind": block.kind,
-                "source_type": block.raw.source_type,
-                "page_number": block.raw.page_number,
-                "paragraph_index": block.raw.paragraph_index,
-                "style": block.raw.style,
-            },
+            metadata=metadata,
         )
 
 
@@ -182,4 +187,13 @@ def parse_docx_to_service_document(
     preset_name: str = "GMIM Bentuk I",
 ) -> ServiceDocument:
     blocks = DOCXReader().read(file_path)
+    return parse_blocks_to_service_document(blocks, preset_name=preset_name)
+
+
+def parse_file_to_service_document(
+    file_path: str,
+    preset_name: str = "GMIM Bentuk I",
+    use_ocr: bool = False,
+) -> ServiceDocument:
+    blocks = read_document_blocks(file_path, use_ocr=use_ocr)
     return parse_blocks_to_service_document(blocks, preset_name=preset_name)

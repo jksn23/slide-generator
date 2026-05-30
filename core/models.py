@@ -208,6 +208,7 @@ class ServiceDocument:
     church_name: Optional[str] = None
     date: Optional[str] = None
     sections: list[ServiceSection] = field(default_factory=list)
+    modules: list[dict[str, Any]] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
@@ -220,6 +221,7 @@ class ServiceDocument:
             "church_name": self.church_name,
             "date": self.date,
             "sections": [section.to_dict() for section in self.sections],
+            "modules": self.modules,
             "metadata": self.metadata,
         }
 
@@ -234,6 +236,7 @@ class ServiceDocument:
             church_name=data.get("church_name"),
             date=data.get("date"),
             sections=[ServiceSection.from_dict(section) for section in data.get("sections", [])],
+            modules=list(data.get("modules") or []),
             metadata=data.get("metadata") or {},
         )
 

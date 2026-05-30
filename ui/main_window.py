@@ -4,6 +4,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFontDatabase
 from PyQt5.QtWidgets import (
     QComboBox,
+    QCheckBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -23,11 +24,15 @@ from PyQt5.QtWidgets import (
 from core.generator import font_category_for_slide, generate_pptx
 from core.deck_editor import DeckEditor
 from core.models import SlideType
-from core.parser import parse_docx_to_deck
+from core.parser import parse_file_to_deck
 from core.presets import PresetRegistry
+from core.readers import PDFTextExtractionError
+from core.template_engine import TemplateResolver
+from core.text_splitter import max_chars_for_style, wrap_text_to_visual_lines
 from ui.components import PreviewSlideItemWidget, VisualSlidePreviewWidget
 from ui.fullscreen_preview import FullscreenPreviewDialog
 from ui.styles import get_stylesheet
+from ui.template_manager_dialog import TemplateManagerDialog
 
 
 TRANSITION_LABELS = {
@@ -120,7 +125,7 @@ class MainWindow(QMainWindow):
         layout.setSpacing(12)
         title = QLabel("Dokumen Tata Ibadah")
         title.setProperty("class", "SectionTitle")
-        self.btn_browse = QPushButton("Pilih File Word")
+        self.btn_browse = QPushButton("Pilih File Word/PDF")
         self.btn_browse.setProperty("class", "SecondaryButton")
         self.btn_browse.clicked.connect(self.browse_file)
         self.lbl_file_name = QLabel("Belum ada file dipilih")
@@ -168,6 +173,13 @@ class MainWindow(QMainWindow):
         self.combo_template = QComboBox()
         self.combo_template.addItems(["gmim_default", "gmim_dark"])
         self._labeled_widget(layout, "Template:", self.combo_template)
+        self.btn_template_manager = QPushButton("Kelola Template")
+        self.btn_template_manager.clicked.connect(self.open_template_manager)
+        layout.addWidget(self.btn_template_manager)
+
+        self.check_ocr = QCheckBox("Gunakan OCR jika PDF scan")
+        self.check_ocr.setProperty("class", "BodyText")
+        layout.addWidget(self.check_ocr)
 
         self.combo_ratio = QComboBox()
         self.combo_ratio.addItems(["1:1 Square", "16:9 Landscape", "4:3 Standard"])
@@ -234,22 +246,32 @@ class MainWindow(QMainWindow):
         self.edit_content = QTextEdit()
         self.edit_type = QComboBox()
         self.edit_type.addItems([slide_type.value for slide_type in SlideType])
+        self.edit_template = QComboBox()
+        self.edit_template.addItems(["", "gmim_default", "gmim_dark"])
         self.edit_section = QLineEdit()
         self.edit_align = QComboBox()
         self.edit_align.addItems(["center", "left", "right"])
         self.btn_apply_edit = QPushButton("Terapkan Edit")
         self.btn_duplicate = QPushButton("Duplicate")
         self.btn_delete = QPushButton("Delete")
+        self.btn_split = QPushButton("Split Slide")
+        self.btn_merge = QPushButton("Merge Next")
         self.btn_move_up = QPushButton("Move Up")
         self.btn_move_down = QPushButton("Move Down")
+        self.lbl_overflow_warning = QLabel("")
+        self.lbl_overflow_warning.setStyleSheet("color:#C62828;")
+        self.lbl_overflow_warning.setWordWrap(True)
         self.btn_apply_edit.clicked.connect(self.apply_editor_changes)
         self.btn_duplicate.clicked.connect(self.duplicate_selected_slide)
         self.btn_delete.clicked.connect(self.delete_selected_slide)
+        self.btn_split.clicked.connect(self.split_selected_slide)
+        self.btn_merge.clicked.connect(self.merge_selected_slide)
         self.btn_move_up.clicked.connect(lambda: self.move_selected_slide(-1))
         self.btn_move_down.clicked.connect(lambda: self.move_selected_slide(1))
         layout.addWidget(title)
         self._labeled_widget(layout, "Judul:", self.edit_title)
         self._labeled_widget(layout, "Tipe:", self.edit_type)
+        self._labeled_widget(layout, "Template slide:", self.edit_template)
         self._labeled_widget(layout, "Section:", self.edit_section)
         self._labeled_widget(layout, "Alignment:", self.edit_align)
         content_label = QLabel("Isi:")
@@ -259,8 +281,11 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.btn_apply_edit)
         layout.addWidget(self.btn_duplicate)
         layout.addWidget(self.btn_delete)
+        layout.addWidget(self.btn_split)
+        layout.addWidget(self.btn_merge)
         layout.addWidget(self.btn_move_up)
         layout.addWidget(self.btn_move_down)
+        layout.addWidget(self.lbl_overflow_warning)
         return panel
 
     def _build_footer(self):
@@ -358,7 +383,12 @@ class MainWindow(QMainWindow):
         }.get(self.combo_ratio.currentText(), "square")
 
     def browse_file(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "Pilih File Word", "", "Word Documents (*.docx)")
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Pilih File Word/PDF",
+            "",
+            "Dokumen Ibadah (*.docx *.pdf);;Word Documents (*.docx);;PDF Documents (*.pdf)",
+        )
         if file_path:
             self.file_path = file_path
             self.lbl_file_name.setText(os.path.basename(file_path))
@@ -366,15 +396,27 @@ class MainWindow(QMainWindow):
 
     def generate_preview(self):
         if not self.file_path:
-            QMessageBox.warning(self, "Peringatan", "Pilih file Word terlebih dahulu.")
+            QMessageBox.warning(self, "Peringatan", "Pilih file Word atau PDF terlebih dahulu.")
             return
 
         self.statusBar().showMessage("Sedang memproses dokumen...")
-        self.deck = parse_docx_to_deck(
-            self.file_path,
-            self.spin_lines.value(),
-            preset_name=self.combo_preset.currentText(),
-        )
+        try:
+            self.deck = parse_file_to_deck(
+                self.file_path,
+                self.spin_lines.value(),
+                preset_name=self.combo_preset.currentText(),
+                use_ocr=self.check_ocr.isChecked(),
+            )
+        except PDFTextExtractionError as exc:
+            self.statusBar().showMessage("PDF tidak menghasilkan teks.")
+            QMessageBox.warning(self, "PDF Scan", str(exc))
+            return
+        except Exception as exc:
+            self.statusBar().showMessage(f"Gagal memproses dokumen: {exc}")
+            QMessageBox.critical(self, "Import Error", f"Dokumen tidak dapat diproses:\n{exc}")
+            return
+        if self._deck_used_ocr():
+            QMessageBox.warning(self, "Hasil OCR", "Hasil OCR mungkin tidak 100% akurat. Mohon periksa kembali teks sebelum export.")
         self.deck.template_name = self.combo_template.currentText()
         self.deck.aspect_ratio = self._get_aspect_ratio()
         self.slides = self.deck.slides
@@ -411,8 +453,10 @@ class MainWindow(QMainWindow):
         self.edit_title.setText(slide.title or "")
         self.edit_content.setPlainText(slide.content)
         self.edit_type.setCurrentText(slide.type.value)
+        self.edit_template.setCurrentText(slide.template or "")
         self.edit_section.setText(slide.section)
         self.edit_align.setCurrentText(slide.metadata.get("style", {}).get("align", "center"))
+        self.lbl_overflow_warning.setText(self._overflow_warning(slide))
 
     def refresh_selected_preview(self, *args):
         self.apply_ui_style_to_slides()
@@ -434,6 +478,7 @@ class MainWindow(QMainWindow):
             content=self.edit_content.toPlainText(),
             slide_type=self.edit_type.currentText(),
             section=self.edit_section.text(),
+            template=self.edit_template.currentText() or None,
             alignment=self.edit_align.currentText(),
         )
         self.slides = self.deck.slides
@@ -461,6 +506,30 @@ class MainWindow(QMainWindow):
             self.show_slide_preview(self.selected_slide)
         else:
             self._clear_layout(self.focus_preview_layout)
+
+    def split_selected_slide(self):
+        if not self.deck or not self.selected_slide:
+            return
+        try:
+            slide = DeckEditor(self.deck).split(self.selected_slide.id)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Split Slide", str(exc))
+            return
+        self.slides = self.deck.slides
+        self.refresh_preview_list()
+        self.show_slide_preview(slide)
+
+    def merge_selected_slide(self):
+        if not self.deck or not self.selected_slide:
+            return
+        try:
+            slide = DeckEditor(self.deck).merge(self.selected_slide.id)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Merge Slide", str(exc))
+            return
+        self.slides = self.deck.slides
+        self.refresh_preview_list()
+        self.show_slide_preview(slide)
 
     def move_selected_slide(self, direction):
         if not self.deck or not self.selected_slide:
@@ -523,3 +592,35 @@ class MainWindow(QMainWindow):
                 widget.setParent(None)
             else:
                 layout.removeItem(item)
+
+    def open_template_manager(self):
+        dialog = TemplateManagerDialog(parent=self)
+        dialog.exec_()
+        current = self.combo_template.currentText()
+        self.combo_template.clear()
+        self.combo_template.addItems(dialog.manager.list_templates())
+        self.combo_template.setCurrentText(current if current in dialog.manager.list_templates() else "gmim_default")
+
+    def _deck_used_ocr(self):
+        if not self.deck:
+            return False
+        service_document = self.deck.metadata.get("service_document", {})
+        for section in service_document.get("sections", []):
+            for item in section.get("items", []):
+                if item.get("metadata", {}).get("ocr_used"):
+                    return True
+        return False
+
+    def _overflow_warning(self, slide):
+        try:
+            style = TemplateResolver(self.combo_template.currentText()).resolve(slide)
+        except Exception:
+            style = {}
+        max_chars = max_chars_for_style(
+            font_size=style.get("font_size", self._font_size_for_slide(slide)),
+            aspect_ratio=self._get_aspect_ratio(),
+        )
+        visual_lines = wrap_text_to_visual_lines(slide.content, max_chars)
+        if len(visual_lines) > self.spin_lines.value():
+            return "Peringatan: teks berpotensi terlalu panjang. Gunakan Split Slide sebelum export."
+        return ""

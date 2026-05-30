@@ -50,6 +50,12 @@ class ServiceSlideBuilder:
         return deck
 
     def _append_section(self, deck: SlideDeck, section: ServiceSection, max_lines_per_slide: int) -> None:
+        module_types = self._module_slide_types(deck)
+        body_type = section.metadata.get("body_type")
+        for section_name, slide_type in module_types.items():
+            if section_name.lower() in section.title.lower() and body_type in {None, "section"}:
+                section.metadata["body_type"] = slide_type
+
         if section.title and section.type not in {"cover", SlideType.SONG_TITLE.value}:
             deck.slides.append(
                 SlideItem(
@@ -75,6 +81,13 @@ class ServiceSlideBuilder:
             self._append_item(deck, section, item, item_type, max_lines_per_slide)
 
         self._flush_speakers(deck, section, speaker_group, max_lines_per_slide)
+
+    def _module_slide_types(self, deck: SlideDeck) -> dict[str, str]:
+        modules = deck.metadata.get("service_document", {}).get("modules") or deck.metadata.get("modules") or []
+        mapping: dict[str, str] = {}
+        for module in modules:
+            mapping.update(module.get("default_slide_types") or {})
+        return mapping
 
     def _append_item(
         self,

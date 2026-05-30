@@ -1,5 +1,58 @@
 # Changelog
 
+## V2 Lanjutan - PDF/OCR, Module System, Template Manager, Preview Editor
+
+Ringkasan:
+- Menambahkan `PDFReader` text-based berbasis PyMuPDF yang menghasilkan `RawBlock` dengan `source_type="pdf"`, `page_number`, dan metadata OCR.
+- Menambahkan deteksi PDF scan/kosong dengan pesan jelas dan OCR fallback opsional melalui `OCRReader`/pytesseract.
+- Menambahkan `read_document_blocks(...)`, `parse_file_to_deck(...)`, dan `parse_file_to_service_document(...)` agar DOCX/PDF memakai pipeline yang sama: Reader -> RawBlock -> UniversalParser -> ServiceDocument -> SlideDeck.
+- Menambahkan module system berbasis konfigurasi `presets/modules/gmim_modules.json` dengan `EventModule`, `ModuleRegistry`, `ModuleDetector`, dan `ModuleTemplateResolver`.
+- Menyimpan module yang terdeteksi ke `ServiceDocument.modules` dan `ServiceDocument.metadata["modules"]`.
+- Menambahkan `TemplateManager` untuk list, load, duplicate, rename, delete, import, export, validasi template, dan preview style dasar.
+- Menambahkan dialog UI `TemplateManagerDialog` untuk pengelolaan template sederhana.
+- Mengintegrasikan UI import `.docx` dan `.pdf`, opsi OCR PDF scan, warning PDF kosong/OCR, template manager, template per slide, split slide, merge slide, dan warning overflow di preview editor.
+- Menambahkan label source section pada item preview list.
+- Menambahkan dependency `PyMuPDF`, `pytesseract`, dan `Pillow` ke `requirements.txt`.
+- Menambahkan logging sederhana untuk import DOCX/PDF, OCR, module detection, template manager, dan export PPTX.
+
+File yang diubah/dibuat:
+- `core/readers.py`
+- `core/parser.py`
+- `core/universal_parser.py`
+- `core/models.py`
+- `core/modules.py`
+- `core/slide_builder.py`
+- `core/template_manager.py`
+- `core/template_engine.py`
+- `core/deck_editor.py`
+- `core/generator.py`
+- `ui/main_window.py`
+- `ui/components.py`
+- `ui/template_manager_dialog.py`
+- `presets/modules/gmim_modules.json`
+- `requirements.txt`
+- `tests/test_pdf_reader_text_based.py`
+- `tests/test_pdf_reader_empty_scan.py`
+- `tests/test_ocr_fallback.py`
+- `tests/test_module_detector.py`
+- `tests/test_module_registry.py`
+- `tests/test_template_manager.py`
+- `tests/test_preview_editor_deck_update.py`
+- `tests/test_pipeline_docx_still_works.py`
+
+Test yang dijalankan:
+- `.\venv\Scripts\python.exe -m pytest`
+- `.\venv\Scripts\python.exe -m compileall core ui tests`
+
+Hasil test:
+- Lulus: 81 passed.
+- Compileall `core`, `ui`, dan `tests` lulus.
+
+Risiko tersisa:
+- OCR membutuhkan aplikasi Tesseract OCR tersedia di sistem, bukan hanya package Python `pytesseract`.
+- Test PDF/OCR memakai mock dependency agar suite tetap stabil di environment tanpa PyMuPDF/Tesseract.
+- Template Manager UI masih sederhana; editing struktur JSON template secara granular belum dibuat.
+
 ## V2 Fondasi Arsitektur - ServiceDocument Sebagai Jalur Parser Utama
 
 Ringkasan:

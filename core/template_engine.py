@@ -14,7 +14,15 @@ class TemplateResolver:
     def __init__(self, template_name: str = "gmim_default", template_dir: Path | str = DEFAULT_TEMPLATE_DIR) -> None:
         self.template_name = template_name
         self.template_dir = Path(template_dir)
-        self.config = self._load_template(template_name)
+        try:
+            self.config = self._load_template(template_name)
+            if not self._is_valid_template(self.config):
+                raise ValueError(f"Invalid template: {template_name}")
+        except Exception:
+            if template_name == "gmim_default":
+                raise
+            self.template_name = "gmim_default"
+            self.config = self._load_template("gmim_default")
         self.preset = TemplatePreset.from_dict(self.config)
 
     def resolve(self, slide: SlideItem | SlideType | str) -> dict[str, Any]:
@@ -45,6 +53,9 @@ class TemplateResolver:
             raise FileNotFoundError(f"Template not found: {path}")
         with path.open("r", encoding="utf-8") as handle:
             return json.load(handle)
+
+    def _is_valid_template(self, config: dict[str, Any]) -> bool:
+        return isinstance(config, dict) and bool(config.get("defaults") or config.get("default")) and isinstance(config.get("slides", {}), dict)
 
     def _deep_merge(self, base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
         merged = deepcopy(base)
