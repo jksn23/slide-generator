@@ -6,6 +6,7 @@ from core.models import (
     SlideItem,
     SlideType,
     SpeakerLine,
+    TemplatePreset,
 )
 
 
@@ -81,3 +82,18 @@ def test_service_document_json_round_trip_supports_v2_contract():
     assert restored.service_form == "GMIM Bentuk V"
     assert restored.theme_weekly == "Hidup dalam kasih"
     assert restored.sections[0].items[0].speaker == "P"
+
+
+def test_template_preset_json_round_trip_supports_v2_contract():
+    preset = TemplatePreset(
+        name="GMIM Creative",
+        default={"font_family": "Arial", "font_size": 36},
+        slides={"song_lyrics": {"align": "center"}},
+        aspect_ratios={"square": {"width": 10, "height": 10}},
+    )
+
+    restored = TemplatePreset.from_json(preset.to_json())
+
+    assert restored.name == "GMIM Creative"
+    assert restored.default["font_family"] == "Arial"
+    assert restored.slides["song_lyrics"]["align"] == "center"

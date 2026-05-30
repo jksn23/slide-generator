@@ -245,6 +245,51 @@ class ServiceDocument:
         return cls.from_dict(json.loads(value))
 
 
+@dataclass
+class TemplatePreset:
+    name: str
+    default: dict[str, Any] = field(default_factory=dict)
+    slides: dict[str, dict[str, Any]] = field(default_factory=dict)
+    sections: dict[str, dict[str, Any]] = field(default_factory=dict)
+    aspect_ratios: dict[str, dict[str, float]] = field(default_factory=dict)
+    default_aspect_ratio: str = "square"
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict:
+        return {
+            "name": self.name,
+            "defaults": self.default,
+            "slides": self.slides,
+            "sections": self.sections,
+            "aspect_ratios": self.aspect_ratios,
+            "default_aspect_ratio": self.default_aspect_ratio,
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "TemplatePreset":
+        return cls(
+            name=data.get("name", ""),
+            default=data.get("defaults") or data.get("default") or {},
+            slides=data.get("slides") or {},
+            sections=data.get("sections") or {},
+            aspect_ratios=data.get("aspect_ratios") or {},
+            default_aspect_ratio=data.get("default_aspect_ratio", data.get("slide_size", "square")),
+            metadata={
+                key: value
+                for key, value in data.items()
+                if key not in {"name", "defaults", "default", "slides", "sections", "aspect_ratios", "default_aspect_ratio"}
+            },
+        )
+
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict(), ensure_ascii=False, indent=2)
+
+    @classmethod
+    def from_json(cls, value: str) -> "TemplatePreset":
+        return cls.from_dict(json.loads(value))
+
+
 @dataclass(init=False)
 class SlideItem:
     id: str

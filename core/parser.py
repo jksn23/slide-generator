@@ -1,9 +1,11 @@
 import re
-from dataclasses import dataclass, field
-from typing import Any, Optional
+from dataclasses import dataclass
+from typing import Optional
 
 from core.models import SlideDeck, SlideItem, SlideType, SpeakerLine
 from core.presets import PresetRegistry
+from core.raw_block import RawBlock
+from core.readers import DOCXReader
 from core.text_splitter import (
     DEFAULT_MAX_CHARS_PER_LINE,
     max_chars_for_style,
@@ -34,65 +36,6 @@ def _split_by_words(text: str, max_chars_per_line: int) -> list[str]:
     return lines
 
 
-@dataclass
-class RawBlock:
-    text: str
-    style_name: str = ""
-    index: int = 0
-    alignment: Optional[int] = None
-    has_bold: bool = False
-    max_font_size: Optional[float] = None
-    uppercase_ratio: float = 0.0
-    source_type: str = "docx"
-    page_number: Optional[int] = None
-    paragraph_index: Optional[int] = None
-    style: Optional[str] = None
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        if self.style is None:
-            self.style = self.style_name or None
-        elif not self.style_name:
-            self.style_name = self.style
-        if self.paragraph_index is None:
-            self.paragraph_index = self.index
-        if not self.uppercase_ratio:
-            self.uppercase_ratio = _uppercase_ratio(self.text)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "text": self.text,
-            "source_type": self.source_type,
-            "page_number": self.page_number,
-            "paragraph_index": self.paragraph_index,
-            "style": self.style,
-            "style_name": self.style_name,
-            "index": self.index,
-            "alignment": self.alignment,
-            "has_bold": self.has_bold,
-            "max_font_size": self.max_font_size,
-            "uppercase_ratio": self.uppercase_ratio,
-            "metadata": self.metadata,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "RawBlock":
-        return cls(
-            text=data.get("text", ""),
-            source_type=data.get("source_type", "docx"),
-            page_number=data.get("page_number"),
-            paragraph_index=data.get("paragraph_index"),
-            style=data.get("style"),
-            style_name=data.get("style_name", ""),
-            index=int(data.get("index", data.get("paragraph_index") or 0)),
-            alignment=data.get("alignment"),
-            has_bold=bool(data.get("has_bold", False)),
-            max_font_size=data.get("max_font_size"),
-            uppercase_ratio=float(data.get("uppercase_ratio", 0.0)),
-            metadata=data.get("metadata") or {},
-        )
-
-
 def _uppercase_ratio(text: str) -> float:
     letters = [char for char in text if char.isalpha()]
     if not letters:
@@ -113,37 +56,6 @@ class ClassifiedBlock:
     @property
     def text(self) -> str:
         return self.raw.text
-
-
-class DOCXReader:
-    def read(self, file_path: str) -> list[RawBlock]:
-        try:
-            import docx
-        except ImportError:
-            return [RawBlock("Error: python-docx not installed.", "Error", 0)]
-
-        document = docx.Document(file_path)
-        blocks: list[RawBlock] = []
-        for index, paragraph in enumerate(document.paragraphs):
-            text = paragraph.text.rstrip()
-            if text.strip():
-                font_sizes = [
-                    float(run.font.size.pt)
-                    for run in paragraph.runs
-                    if run.font.size is not None
-                ]
-                blocks.append(
-                    RawBlock(
-                        text=text,
-                        style_name=paragraph.style.name,
-                        index=index,
-                        alignment=paragraph.alignment,
-                        has_bold=any(run.bold for run in paragraph.runs),
-                        max_font_size=max(font_sizes) if font_sizes else None,
-                        uppercase_ratio=_uppercase_ratio(text),
-                    )
-                )
-        return blocks
 
 
 class BlockClassifier:
@@ -271,9 +183,18 @@ class BlockClassifier:
         return ClassifiedBlock(block, "body", SlideType.LITURGY_DIALOG)
 
     def _metadata(self, text: str) -> Optional[tuple[str, str]]:
-        match = re.match(r"^(tema|khadim|pelayan|tanggal|hari/tanggal)\s*:\s*(.+)$", text, re.I)
+        match = re.match(
+            r"^(bentuk(?:\s+ibadah)?|tata ibadah|tema(?:\s+(?:bulanan|bulan|mingguan))?|khadim|pelayan|tanggal|hari/tanggal|bacaan(?:\s+alkitab)?|gereja|nama gereja|jemaat)\s*:\s*(.+)$",
+            text,
+            re.I,
+        )
         if match:
             return match.group(1).lower(), match.group(2).strip()
+        form_match = re.search(r"\b(GMIM\s+)?BENTUK\s+([IVX]+|\d+)\b", text, re.I)
+        if form_match and len(text) <= 80:
+            if "TATA IBADAH" in text.upper():
+                return None
+            return "bentuk ibadah", form_match.group(0).strip()
         if self.DATE_RE.search(text) and len(text) <= 60:
             return "tanggal", text
         return None
@@ -289,10 +210,20 @@ class BlockClassifier:
         upper = text.upper()
         return (
             block.style_name.startswith("Heading")
-            or any(keyword in upper for keyword in self.SECTION_KEYWORDS)
+            or self._has_section_heading_keyword(block, text, upper)
             or (block.has_bold and len(text) <= 90 and block.uppercase_ratio >= 0.65)
             or (text.isupper() and len(text) <= 90)
             or (block.max_font_size is not None and block.max_font_size >= 14 and block.uppercase_ratio >= 0.65)
+        )
+
+    def _has_section_heading_keyword(self, block: RawBlock, text: str, upper: str) -> bool:
+        if not any(keyword in upper for keyword in self.SECTION_KEYWORDS):
+            return False
+        return (
+            block.style_name.startswith("Heading")
+            or block.has_bold
+            or text.isupper()
+            or block.uppercase_ratio >= 0.65
         )
 
     def _is_cover_title(self, upper: str) -> bool:
@@ -646,13 +577,18 @@ class SlideBuilder:
 
 
 def parse_blocks(blocks: list[RawBlock], max_lines_per_slide: int = 6, preset_name: str = "GMIM Bentuk I") -> SlideDeck:
-    detected = SectionDetector(preset_name=preset_name).detect(blocks)
-    preset = PresetRegistry().get(preset_name)
+    from core.slide_builder import ServiceSlideBuilder
+    from core.universal_parser import parse_blocks_to_service_document
+
+    document = parse_blocks_to_service_document(blocks, preset_name=preset_name)
+    try:
+        preset = PresetRegistry().get(preset_name)
+    except KeyError:
+        preset = {}
     aspect_ratio = preset.get("aspect_ratio", "square")
-    deck = SlideBuilder().build(
-        detected,
+    deck = ServiceSlideBuilder().build(
+        document,
         max_lines_per_slide=max_lines_per_slide,
-        aspect_ratio=aspect_ratio,
     )
     deck.preset_name = preset_name
     deck.template_name = preset.get("template", deck.template_name)

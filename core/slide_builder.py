@@ -1,5 +1,5 @@
 from core.models import ServiceDocument, ServiceItem, ServiceSection, SlideDeck, SlideItem, SlideType, SpeakerLine
-from core.text_splitter import split_visual_lines_to_chunks
+from core.text_splitter import normalize_content_line, split_visual_lines_to_chunks, wrap_text_to_visual_lines
 
 
 class ServiceSlideBuilder:
@@ -24,7 +24,7 @@ class ServiceSlideBuilder:
         max_lines_per_slide: int = DEFAULT_MAX_LINES,
     ) -> SlideDeck:
         deck = SlideDeck(
-            metadata=document.to_dict(),
+            metadata={**document.metadata, "service_document": document.to_dict()},
             preset_name=document.service_form or "GMIM Bentuk I",
         )
 
@@ -66,15 +66,15 @@ class ServiceSlideBuilder:
             item_type = SlideType.from_any(item.type)
             if item_type == SlideType.COVER:
                 continue
-            if item_type == SlideType.LITURGY_DIALOG and item.speaker:
+            if item_type == SlideType.LITURGY_DIALOG:
                 speaker_group.append(item)
                 continue
 
-            self._flush_speakers(deck, section, speaker_group)
+            self._flush_speakers(deck, section, speaker_group, max_lines_per_slide)
             speaker_group = []
             self._append_item(deck, section, item, item_type, max_lines_per_slide)
 
-        self._flush_speakers(deck, section, speaker_group)
+        self._flush_speakers(deck, section, speaker_group, max_lines_per_slide)
 
     def _append_item(
         self,
@@ -86,6 +86,9 @@ class ServiceSlideBuilder:
     ) -> None:
         content = item.content or item.raw_text or ""
         if not content.strip():
+            return
+
+        if item_type == SlideType.SECTION and content.strip() == section.title.strip():
             return
 
         if item_type == SlideType.SONG_TITLE:
@@ -117,6 +120,7 @@ class ServiceSlideBuilder:
         deck: SlideDeck,
         section: ServiceSection,
         speaker_items: list[ServiceItem],
+        max_lines_per_slide: int,
     ) -> None:
         if not speaker_items:
             return
@@ -125,15 +129,48 @@ class ServiceSlideBuilder:
             for item in speaker_items
             if (item.content or item.raw_text or "").strip()
         ]
+        lines = self._wrap_speaker_lines(self._merge_speaker_continuations(lines))
         if not lines:
             return
-        content = "\n".join(f"{line.speaker} : {line.text}" for line in lines)
-        deck.slides.append(
-            SlideItem(
-                type=SlideType.LITURGY_DIALOG,
-                section=section.title,
-                content=content,
-                speaker_lines=lines,
-                template=SlideType.LITURGY_DIALOG.value,
+        active_speaker = ""
+        line_limit = max(1, max_lines_per_slide)
+        for index in range(0, len(lines), line_limit):
+            chunk = lines[index:index + max(1, max_lines_per_slide)]
+            if chunk and not chunk[0].speaker and active_speaker:
+                chunk[0] = SpeakerLine(active_speaker, chunk[0].text)
+            for line in chunk:
+                if line.speaker:
+                    active_speaker = line.speaker
+            content = "\n".join(
+                f"{line.speaker} : {line.text}" if line.speaker else line.text
+                for line in chunk
             )
-        )
+            deck.slides.append(
+                SlideItem(
+                    type=SlideType.LITURGY_DIALOG,
+                    section=section.title,
+                    content=content,
+                    speaker_lines=chunk,
+                    template=SlideType.LITURGY_DIALOG.value,
+                )
+            )
+
+    def _merge_speaker_continuations(self, lines: list[SpeakerLine]) -> list[SpeakerLine]:
+        merged: list[SpeakerLine] = []
+        for line in lines:
+            text = normalize_content_line(line.text)
+            if not text:
+                continue
+            if line.speaker or not merged:
+                merged.append(SpeakerLine(line.speaker, text))
+            else:
+                merged[-1].text = f"{merged[-1].text} {text}"
+        return merged
+
+    def _wrap_speaker_lines(self, lines: list[SpeakerLine]) -> list[SpeakerLine]:
+        wrapped: list[SpeakerLine] = []
+        for line in lines:
+            prefix_width = len(f"{line.speaker} : ") if line.speaker else 0
+            for index, text in enumerate(wrap_text_to_visual_lines(line.text, max(18, 42 - prefix_width))):
+                wrapped.append(SpeakerLine(line.speaker if index == 0 else "", text))
+        return wrapped

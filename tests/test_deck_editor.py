@@ -44,3 +44,20 @@ def test_deck_editor_duplicate_delete_and_move_keep_numbers():
     assert len(deck.slides) == 3
     assert [slide.slide_number for slide in deck.slides] == [1, 2, 3]
     assert duplicate in deck.slides
+
+
+def test_deck_editor_split_and_merge_keep_numbers():
+    deck = SlideDeck(
+        slides=[
+            SlideItem(type=SlideType.SONG_LYRICS, content="baris satu\nbaris dua\nbaris tiga\nbaris empat")
+        ]
+    )
+    deck.assign_numbers()
+    editor = DeckEditor(deck)
+
+    new_slide = editor.split(deck.slides[0].id, split_at_line=2)
+    merged = editor.merge(deck.slides[0].id, new_slide.id)
+
+    assert len(deck.slides) == 1
+    assert merged.content == "baris satu\nbaris dua\nbaris tiga\nbaris empat"
+    assert deck.slides[0].slide_number == 1

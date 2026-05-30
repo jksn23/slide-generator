@@ -3,7 +3,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from core.models import SlideItem, SlideType
+from core.models import SlideItem, SlideType, TemplatePreset
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -15,6 +15,7 @@ class TemplateResolver:
         self.template_name = template_name
         self.template_dir = Path(template_dir)
         self.config = self._load_template(template_name)
+        self.preset = TemplatePreset.from_dict(self.config)
 
     def resolve(self, slide: SlideItem | SlideType | str) -> dict[str, Any]:
         slide_type = slide.type if isinstance(slide, SlideItem) else SlideType.from_any(slide)

@@ -1,5 +1,42 @@
 # Changelog
 
+## V2 Fondasi Arsitektur - ServiceDocument Sebagai Jalur Parser Utama
+
+Ringkasan:
+- Menambahkan model `TemplatePreset` agar kontrak template memiliki representasi data formal selain file JSON mentah.
+- Memindahkan kontrak `RawBlock` ke `core/raw_block.py` dan menambahkan `core/readers.py` berisi `DocumentReader` serta `DOCXReader` canonical, sambil tetap mempertahankan import lama dari `core.parser`.
+- Mengubah `parse_blocks(...)` dan `parse_docx_to_deck(...)` agar melewati pipeline `RawBlock -> UniversalParser -> ServiceDocument -> ServiceSlideBuilder -> SlideDeck`.
+- Mempertahankan `SlideBuilder` lama di `core/parser.py` sebagai kompatibilitas dan referensi perilaku, bukan menghapusnya.
+- Memperkuat Universal Parser untuk metadata `tema mingguan`, bentuk ibadah, bacaan, gereja, tanggal, serta inferensi `GMIM Bentuk I-V`.
+- Memperbaiki handling dialog liturgi di builder baru: speaker marker kosong, continuation berindentasi, wrapping P/J, dan chunking tetap kompatibel dengan perilaku lama.
+- Menambahkan operasi editor core `split` dan `merge` sebagai fondasi Preview Editor, tanpa mengubah UI terlebih dahulu.
+
+File yang diubah:
+- `core/models.py`
+- `core/raw_block.py`
+- `core/readers.py`
+- `core/parser.py`
+- `core/universal_parser.py`
+- `core/slide_builder.py`
+- `core/template_engine.py`
+- `core/deck_editor.py`
+- `tests/test_slide_model.py`
+- `tests/test_universal_parser.py`
+- `tests/test_deck_editor.py`
+- `CHANGELOG.md`
+
+Test yang dijalankan:
+- `.\venv\Scripts\python.exe -m pytest`
+- `.\venv\Scripts\python.exe -m compileall core tests`
+
+Hasil test:
+- Lulus: 71 passed.
+- Compileall `core` dan `tests` lulus.
+
+Risiko tersisa:
+- Struktur reader sudah siap untuk PDF, tetapi PDF Reader belum dibuat sesuai instruksi agar tidak melompati fondasi.
+- Preview UI sudah berbasis `SlideItem + TemplateResolver`, tetapi tombol split/merge belum disambungkan ke UI; operasi datanya sudah tersedia di `DeckEditor`.
+
 ## V2 Tahap 1-2 Awal - Service JSON dan Universal Parser
 
 Ringkasan:
