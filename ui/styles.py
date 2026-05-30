@@ -67,13 +67,45 @@ def get_stylesheet():
         background-color: #FFFFFF;
         border: 1px solid #D9DED8;
         border-radius: 8px;
-        padding: 8px;
+        min-height: 34px;
+        padding: 6px 10px;
         color: #1E1E1E;
         font-family: "Segoe UI";
         font-size: 14px;
     }
+    QComboBox {
+        padding-right: 30px;
+    }
+    QComboBox::drop-down {
+        border-left: 1px solid #D9DED8;
+        width: 28px;
+    }
+    QComboBox QAbstractItemView {
+        background-color: #FFFFFF;
+        border: 1px solid #D9DED8;
+        selection-background-color: #EAF2EE;
+        selection-color: #1E1E1E;
+    }
+    QSpinBox {
+        padding-right: 28px;
+    }
+    QSpinBox::up-button, QSpinBox::down-button {
+        border-left: 1px solid #D9DED8;
+        width: 22px;
+    }
     QLineEdit:focus, QComboBox:focus, QSpinBox:focus {
         border: 1px solid #1F4D3A;
+    }
+    QScrollArea#LeftPanelScroll {
+        border: none;
+        background-color: transparent;
+    }
+    QWidget#LeftPanelContent {
+        background-color: transparent;
+    }
+    QFrame#SettingsCard QLabel.BodyText {
+        color: #2C332E;
+        font-size: 13px;
     }
     
     QStatusBar {

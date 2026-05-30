@@ -14,6 +14,7 @@ from PyQt5.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSpinBox,
+    QSizePolicy,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -80,14 +81,23 @@ class MainWindow(QMainWindow):
         body_layout.setContentsMargins(24, 24, 24, 24)
         body_layout.setSpacing(24)
 
+        left_scroll = QScrollArea()
+        left_scroll.setObjectName("LeftPanelScroll")
+        left_scroll.setWidgetResizable(True)
+        left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        left_scroll.setFrameShape(QFrame.NoFrame)
+        left_scroll.setMinimumWidth(340)
+        left_scroll.setMaximumWidth(360)
+
         left_panel = QWidget()
-        left_panel.setFixedWidth(320)
+        left_panel.setObjectName("LeftPanelContent")
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(16)
         left_layout.addWidget(self._build_document_card())
         left_layout.addWidget(self._build_settings_card())
         left_layout.addStretch()
+        left_scroll.setWidget(left_panel)
 
         right_panel = QFrame()
         right_panel.setProperty("class", "Card")
@@ -97,7 +107,7 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(self._build_focus_preview_panel(), stretch=2)
         right_layout.addWidget(self._build_editor_panel(), stretch=1)
 
-        body_layout.addWidget(left_panel)
+        body_layout.addWidget(left_scroll)
         body_layout.addWidget(right_panel)
         main_layout.addWidget(body_widget, stretch=1)
         main_layout.addWidget(self._build_footer())
@@ -123,9 +133,11 @@ class MainWindow(QMainWindow):
 
     def _build_settings_card(self):
         card = QFrame()
+        card.setObjectName("SettingsCard")
         card.setProperty("class", "Card")
         layout = QVBoxLayout(card)
-        layout.setSpacing(10)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(9)
         title = QLabel("Pengaturan Slide")
         title.setProperty("class", "SectionTitle")
         layout.addWidget(title)
@@ -273,6 +285,8 @@ class MainWindow(QMainWindow):
     def _labeled_widget(self, layout, label_text, widget):
         label = QLabel(label_text)
         label.setProperty("class", "BodyText")
+        label.setWordWrap(True)
+        self._prepare_form_control(widget)
         layout.addWidget(label)
         layout.addWidget(widget)
 
@@ -292,6 +306,11 @@ class MainWindow(QMainWindow):
             combo.setCurrentText("Arial")
         combo.currentTextChanged.connect(self.refresh_selected_preview)
         return combo
+
+    def _prepare_form_control(self, widget):
+        if isinstance(widget, (QComboBox, QLineEdit, QSpinBox)):
+            widget.setMinimumHeight(36)
+            widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
     def _get_font_sizes(self):
         return {
