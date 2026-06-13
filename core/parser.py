@@ -605,6 +605,7 @@ def parse_blocks(blocks: list[RawBlock], max_lines_per_slide: int = 6, preset_na
     deck = ServiceSlideBuilder().build(
         document,
         max_lines_per_slide=max_lines_per_slide,
+        aspect_ratio=aspect_ratio,
     )
     deck.preset_name = preset_name
     deck.template_name = preset.get("template", deck.template_name)

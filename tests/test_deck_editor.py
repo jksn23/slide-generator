@@ -61,3 +61,12 @@ def test_deck_editor_split_and_merge_keep_numbers():
     assert len(deck.slides) == 1
     assert merged.content == "baris satu\nbaris dua\nbaris tiga\nbaris empat"
     assert deck.slides[0].slide_number == 1
+
+
+def test_deck_editor_alignment_recovers_from_none_style_metadata():
+    deck = SlideDeck(slides=[SlideItem(type=SlideType.SECTION, content="Pembukaan", metadata={"style": None})])
+    deck.assign_numbers()
+
+    updated = DeckEditor(deck).update_slide(deck.slides[0].id, alignment="left")
+
+    assert updated.metadata["style"]["align"] == "left"

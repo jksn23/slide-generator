@@ -375,6 +375,15 @@ class SlideItem:
         elif self.background:
             self.background.image = None
 
+    def ensure_style(self) -> dict[str, Any]:
+        if not isinstance(self.metadata, dict):
+            self.metadata = {}
+        style = self.metadata.get("style")
+        if not isinstance(style, dict):
+            style = {}
+            self.metadata["style"] = style
+        return style
+
     def to_dict(self) -> dict:
         return {
             "id": self.id,

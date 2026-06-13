@@ -367,7 +367,7 @@ class MainWindow(QMainWindow):
         return font_sizes["liturgi"]
 
     def apply_ui_style_to_slide(self, slide):
-        style = slide.metadata.setdefault("style", {})
+        style = slide.ensure_style()
         style["font_family"] = self._get_font_families()[font_category_for_slide(slide.type)]
         style["font_size"] = self._font_size_for_slide(slide)
 
@@ -455,7 +455,7 @@ class MainWindow(QMainWindow):
         self.edit_type.setCurrentText(slide.type.value)
         self.edit_template.setCurrentText(slide.template or "")
         self.edit_section.setText(slide.section)
-        self.edit_align.setCurrentText(slide.metadata.get("style", {}).get("align", "center"))
+        self.edit_align.setCurrentText(slide.ensure_style().get("align", "center"))
         self.lbl_overflow_warning.setText(self._overflow_warning(slide))
 
     def refresh_selected_preview(self, *args):

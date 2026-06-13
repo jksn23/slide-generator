@@ -37,7 +37,7 @@ class TemplateResolver:
             )
         style = self._deep_merge(defaults, self._deep_merge(specific, section_overrides))
         if isinstance(slide, SlideItem):
-            style = self._deep_merge(style, slide.metadata.get("style", {}))
+            style = self._deep_merge(style, slide.ensure_style())
         return style
 
     def aspect_ratio(self, name: str | None = None) -> dict[str, float]:

@@ -97,3 +97,12 @@ def test_template_preset_json_round_trip_supports_v2_contract():
     assert restored.name == "GMIM Creative"
     assert restored.default["font_family"] == "Arial"
     assert restored.slides["song_lyrics"]["align"] == "center"
+
+
+def test_slide_item_ensure_style_recovers_from_none_style_metadata():
+    slide = SlideItem(type="section", content="Pembukaan", metadata={"style": None})
+
+    style = slide.ensure_style()
+    style["font_size"] = 44
+
+    assert slide.metadata["style"] == {"font_size": 44}

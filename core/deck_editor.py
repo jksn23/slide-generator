@@ -42,7 +42,7 @@ class DeckEditor:
             slide.background = slide.background or SlideBackground()
             slide.background.color = background_color
         if alignment:
-            slide.metadata.setdefault("style", {})["align"] = alignment
+            slide.ensure_style()["align"] = alignment
         return slide
 
     def duplicate(self, slide_id: str) -> SlideItem:

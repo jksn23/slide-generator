@@ -27,3 +27,12 @@ def test_template_resolver_applies_section_override():
 
     assert style["background"]["color"] == "#FFFFFF"
     assert style["color"] == "#1E1E1E"
+
+
+def test_template_resolver_tolerates_none_style_metadata():
+    slide = SlideItem(type=SlideType.SECTION, content="Pembukaan", metadata={"style": None})
+
+    style = TemplateResolver("gmim_default").resolve(slide)
+
+    assert style["font_size"] == 52
+    assert slide.metadata["style"] == {}
