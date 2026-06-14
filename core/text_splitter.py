@@ -62,7 +62,8 @@ def max_chars_for_style(
     }.get(aspect_ratio, 1.0)
     size = float(font_size or REFERENCE_FONT_SIZE)
     size_factor = REFERENCE_FONT_SIZE / max(size, 1.0)
-    return max(18, int(round(base_chars * ratio_factor * size_factor)))
+    # Memberikan margin aman 15% (0.85) untuk font proporsional
+    return max(18, int(round(base_chars * ratio_factor * size_factor * 0.85)))
 
 
 def split_text_to_lines(text: str, max_chars_per_line: int = DEFAULT_MAX_CHARS_PER_LINE) -> list[str]:

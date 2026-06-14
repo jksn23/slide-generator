@@ -60,7 +60,7 @@ class ClassifiedBlock:
 
 class BlockClassifier:
     SONG_RE = re.compile(r"^(menyanyi|nyanyian|kj|nkb|pkj2?|nnbt|mazmur|hymne|kidung)\b", re.I)
-    SPEAKER_RE = re.compile(r"^(P|J|P\+J|PK|p|Calon|L|S)\s*[:\t ]+(.*)$")
+    SPEAKER_RE = re.compile(r"^(P|J|P\+J|P\s*[&/]\s*J|PK|p|Calon|L|S)\s*[:\t ]+(.*)$")
     DATE_RE = re.compile(r"\b(\d{1,2}\s+\w+\s+\d{4}|\d{1,2}[-/]\d{1,2}[-/]\d{2,4})\b", re.I)
     SECTION_KEYWORDS = {
         "PEMBUKAAN": SlideType.LITURGY_DIALOG,
@@ -239,7 +239,9 @@ class BlockClassifier:
             block.style_name.startswith("Heading")
             or block.has_bold
             or text.isupper()
-            or block.uppercase_ratio >= 0.65
+            or text.istitle()
+            or (len(text) > 0 and text[0].isupper())
+            or block.uppercase_ratio >= 0.5
         )
 
     def _is_cover_title(self, upper: str) -> bool:

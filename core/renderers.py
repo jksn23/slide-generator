@@ -1,8 +1,10 @@
 import os
 import tempfile
+import uuid
 from typing import Iterable
 
 from lxml import etree
+from lxml.builder import ElementMaker
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.shapes import MSO_SHAPE
@@ -93,7 +95,10 @@ class BackgroundRenderer:
             sp_tree.insert(2, picture._element)
         finally:
             if tmp_path and os.path.exists(tmp_path):
-                os.remove(tmp_path)
+                try:
+                    os.remove(tmp_path)
+                except (PermissionError, OSError):
+                    pass
 
 
 class TextRenderer:
@@ -214,6 +219,7 @@ class PPTXRenderer:
         output_path: str,
         aspect_ratio: str = "square",
         transition: str | None = None,
+        custom_breakpoints: dict[int, str] | None = None,
     ) -> None:
         deck_slides = slides.slides if isinstance(slides, SlideDeck) else list(slides)
         ratio = self.resolver.aspect_ratio(aspect_ratio)
@@ -222,15 +228,68 @@ class PPTXRenderer:
         prs.slide_height = Inches(ratio["height"])
         blank_layout = prs.slide_layouts[6]
 
-        for slide_item in deck_slides:
+        slide_sections_mapping = []
+        
+        # Variabel pelacak untuk custom section
+        active_custom_section = "Tata Ibadah"
+        
+        # Variabel pelacak untuk pewarisan background
+        last_sec_name = None
+        active_section_bg = None
+
+        for index, slide_item in enumerate(deck_slides):
             if not slide_item.include:
                 continue
-            slide = prs.slides.add_slide(blank_layout)
-            style = self.resolver.resolve(slide_item)
-            self.background_renderer.render(slide, prs, slide_item, style)
-            if slide_item.type != SlideType.BLANK:
-                self.text_renderer.render(slide, prs, slide_item, style)
-            self._apply_transition(slide, transition)
+            try:
+                slide = prs.slides.add_slide(blank_layout)
+                
+                # --- LOGIKA PENENTUAN SECTION ---
+                if custom_breakpoints is not None:
+                    # Jika user memberikan custom breakpoints, cek apakah index saat ini adalah titik potong baru
+                    if index in custom_breakpoints:
+                        active_custom_section = custom_breakpoints[index]
+                    sec_name = active_custom_section
+                else:
+                    # Fallback ke perilaku lama jika tidak ada custom breakpoints
+                    sec_name = slide_item.section if slide_item.section else "Tata Ibadah"
+                # ---------------------------------
+
+                slide_sections_mapping.append((sec_name, slide.slide_id))
+
+                # --- LOGIKA PEWARISAN BACKGROUND SECTION ---
+                # 1. Deteksi jika berpindah ke section baru
+                if sec_name != last_sec_name:
+                    active_section_bg = None
+                    last_sec_name = sec_name
+                    
+                # 2. Update background aktif jika slide ini memiliki pengaturan spesifik
+                if slide_item.background and (slide_item.background.image or slide_item.background.color):
+                    active_section_bg = slide_item.background
+                
+                # 3. Wariskan background jika slide ini kosong tapi ada background aktif di section ini
+                elif active_section_bg is not None:
+                    if slide_item.background is None:
+                        slide_item.background = SlideBackground()
+                    
+                    # Salin properti dari background section yang aktif
+                    slide_item.background.image = active_section_bg.image
+                    slide_item.background.color = active_section_bg.color
+                    slide_item.background.overlay_color = active_section_bg.overlay_color
+                    slide_item.background.overlay_opacity = active_section_bg.overlay_opacity
+                # -------------------------------------------
+
+                style = self.resolver.resolve(slide_item)
+                self.background_renderer.render(slide, prs, slide_item, style)
+                if slide_item.type != SlideType.BLANK:
+                    self.text_renderer.render(slide, prs, slide_item, style)
+                self._apply_transition(slide, transition)
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(f"Gagal merender slide {slide_item.id}: {e}")
+                continue
+
+        # Injeksi XML Sections sebelum file disimpan
+        self._inject_sections(prs, slide_sections_mapping)
 
         prs.save(output_path)
 
@@ -242,4 +301,65 @@ class PPTXRenderer:
         for existing in slide_xml.findall(tag):
             slide_xml.remove(existing)
         transition_xml = self.TRANSITION_XML.get(transition, self.TRANSITION_XML["fade"])
-        slide_xml.append(etree.fromstring(transition_xml.format(ns=PPTX_NS, p14_ns=PPTX_P14_NS)))
+        transition_element = etree.fromstring(transition_xml.format(ns=PPTX_NS, p14_ns=PPTX_P14_NS))
+        
+        cSld = slide_xml.find(f"{{{PPTX_NS}}}cSld")
+        if cSld is not None:
+            index = slide_xml.index(cSld)
+            slide_xml.insert(index + 1, transition_element)
+        else:
+            slide_xml.append(transition_element)
+
+    def _inject_sections(self, prs, mapping):
+        if not mapping:
+            return
+
+        P_NS = "http://schemas.openxmlformats.org/presentationml/2006/main"
+        P14_NS = "http://schemas.microsoft.com/office/powerpoint/2010/main"
+        EXT_URI = "{521415D9-36F7-43E2-AB2F-B90AF26B5E84}"
+
+        # 1. Kelompokkan ID Slide ke dalam blok yang berurutan (Contiguous Blocks)
+        blocks = []
+        current_section = None
+        current_ids = []
+
+        for sec_name, sld_id in mapping:
+            if sec_name != current_section:
+                if current_section is not None:
+                    blocks.append((current_section, current_ids))
+                current_section = sec_name
+                current_ids = [sld_id]
+            else:
+                current_ids.append(sld_id)
+        if current_section is not None:
+            blocks.append((current_section, current_ids))
+
+        # 2. Akses root XML
+        presentation_xml = prs.element
+        extLst = presentation_xml.find(f'./{{{P_NS}}}extLst')
+        
+        # 3. Buat <p:extLst> jika belum ada
+        if extLst is None:
+            extLst = etree.Element(f'{{{P_NS}}}extLst')
+            presentation_xml.append(extLst)
+
+        # 4. Buat sub-elemen ekstensi khusus
+        section_ext = etree.Element(f'{{{P_NS}}}ext', uri=EXT_URI)
+        extLst.append(section_ext)
+
+        builder = ElementMaker(namespace=P14_NS, nsmap={'p14': P14_NS})
+        sectionList = builder.sectionLst()
+        section_ext.append(sectionList)
+
+        # 5. Injeksi XML
+        for section_name, slide_ids in blocks:
+            sec_id = f"{{{str(uuid.uuid4()).upper()}}}"
+            section_node = etree.Element(f'{{{P14_NS}}}section', name=str(section_name), id=sec_id)
+            slideIdLst = etree.Element(f'{{{P14_NS}}}sldIdLst')
+            
+            for sld_id in slide_ids:
+                slideId = etree.Element(f'{{{P14_NS}}}sldId', id=str(sld_id))
+                slideIdLst.append(slideId)
+            
+            section_node.append(slideIdLst)
+            sectionList.append(section_node)

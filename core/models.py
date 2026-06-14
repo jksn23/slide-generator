@@ -112,13 +112,16 @@ class SlideBackground:
         if isinstance(value, str):
             return cls(image=value)
         if isinstance(value, dict):
-            return cls(
-                color=value.get("color"),
-                image=value.get("image"),
-                overlay_color=value.get("overlay_color", "#000000"),
-                overlay_opacity=float(value.get("overlay_opacity", 0.0)),
-            )
-        raise TypeError(f"Unsupported background value: {value!r}")
+            try:
+                return cls(
+                    color=value.get("color"),
+                    image=value.get("image"),
+                    overlay_color=value.get("overlay_color", "#000000"),
+                    overlay_opacity=float(value.get("overlay_opacity", 0.0)),
+                )
+            except Exception:
+                return None
+        return None
 
 
 @dataclass
