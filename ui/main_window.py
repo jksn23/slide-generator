@@ -16,6 +16,7 @@ from PyQt5.QtWidgets import (
     QScrollArea,
     QSpinBox,
     QSizePolicy,
+    QSplitter,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -84,20 +85,22 @@ class MainWindow(QMainWindow):
         body_widget = QWidget()
         body_layout = QHBoxLayout(body_widget)
         body_layout.setContentsMargins(24, 24, 24, 24)
-        body_layout.setSpacing(24)
+        body_layout.setSpacing(0)
+
+        main_splitter = QSplitter(Qt.Horizontal)
+        main_splitter.setHandleWidth(12)
 
         left_scroll = QScrollArea()
         left_scroll.setObjectName("LeftPanelScroll")
         left_scroll.setWidgetResizable(True)
         left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         left_scroll.setFrameShape(QFrame.NoFrame)
-        left_scroll.setMinimumWidth(340)
-        left_scroll.setMaximumWidth(360)
+        left_scroll.setMinimumWidth(320)
 
         left_panel = QWidget()
         left_panel.setObjectName("LeftPanelContent")
         left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setContentsMargins(0, 0, 16, 0)
         left_layout.setSpacing(16)
         left_layout.addWidget(self._build_document_card())
         left_layout.addWidget(self._build_settings_card())
@@ -106,14 +109,33 @@ class MainWindow(QMainWindow):
 
         right_panel = QFrame()
         right_panel.setProperty("class", "Card")
-        right_layout = QHBoxLayout(right_panel)
-        right_layout.setSpacing(16)
-        right_layout.addWidget(self._build_slide_list_panel(), stretch=1)
-        right_layout.addWidget(self._build_focus_preview_panel(), stretch=2)
-        right_layout.addWidget(self._build_editor_panel(), stretch=1)
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.setContentsMargins(12, 12, 12, 12)
+        
+        inner_splitter = QSplitter(Qt.Horizontal)
+        inner_splitter.setHandleWidth(12)
+        
+        slide_list_panel = self._build_slide_list_panel()
+        focus_preview_panel = self._build_focus_preview_panel()
+        editor_panel = self._build_editor_panel()
+        
+        inner_splitter.addWidget(slide_list_panel)
+        inner_splitter.addWidget(focus_preview_panel)
+        inner_splitter.addWidget(editor_panel)
+        
+        inner_splitter.setStretchFactor(0, 2)
+        inner_splitter.setStretchFactor(1, 5)
+        inner_splitter.setStretchFactor(2, 3)
+        
+        right_layout.addWidget(inner_splitter)
 
-        body_layout.addWidget(left_scroll)
-        body_layout.addWidget(right_panel)
+        main_splitter.addWidget(left_scroll)
+        main_splitter.addWidget(right_panel)
+        
+        main_splitter.setStretchFactor(0, 0)
+        main_splitter.setStretchFactor(1, 1)
+
+        body_layout.addWidget(main_splitter)
         main_layout.addWidget(body_widget, stretch=1)
         main_layout.addWidget(self._build_footer())
         self.statusBar().showMessage("Siap")
@@ -251,6 +273,7 @@ class MainWindow(QMainWindow):
         self.edit_section = QLineEdit()
         self.edit_align = QComboBox()
         self.edit_align.addItems(["center", "left", "right"])
+        self.btn_set_section = QPushButton("Set as Section Start")
         self.btn_apply_edit = QPushButton("Terapkan Edit")
         self.btn_duplicate = QPushButton("Duplicate")
         self.btn_delete = QPushButton("Delete")
@@ -261,6 +284,7 @@ class MainWindow(QMainWindow):
         self.lbl_overflow_warning = QLabel("")
         self.lbl_overflow_warning.setStyleSheet("color:#C62828;")
         self.lbl_overflow_warning.setWordWrap(True)
+        self.btn_set_section.clicked.connect(self.apply_section_start)
         self.btn_apply_edit.clicked.connect(self.apply_editor_changes)
         self.btn_duplicate.clicked.connect(self.duplicate_selected_slide)
         self.btn_delete.clicked.connect(self.delete_selected_slide)
@@ -278,6 +302,7 @@ class MainWindow(QMainWindow):
         content_label.setProperty("class", "BodyText")
         layout.addWidget(content_label)
         layout.addWidget(self.edit_content, stretch=1)
+        layout.addWidget(self.btn_set_section)
         layout.addWidget(self.btn_apply_edit)
         layout.addWidget(self.btn_duplicate)
         layout.addWidget(self.btn_delete)
@@ -399,6 +424,25 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Peringatan", "Pilih file Word atau PDF terlebih dahulu.")
             return
 
+        from PyQt5.QtWidgets import QDialog
+        from core.readers import extract_cover_title_from_docx, extract_cover_title_from_pdf
+        from ui.cover_editor import CoverDesignerDialog
+        from core.models import SlideItem, SlideType, SlideBackground
+
+        if self.file_path.endswith('.docx'):
+            detected_title = extract_cover_title_from_docx(self.file_path)
+        elif self.file_path.endswith('.pdf'):
+            detected_title = extract_cover_title_from_pdf(self.file_path)
+        else:
+            detected_title = "TATA IBADAH"
+
+        designer = CoverDesignerDialog(detected_title, parent=self)
+        if designer.exec_() != QDialog.Accepted:
+            self.statusBar().showMessage("Proses dibatalkan oleh pengguna.")
+            return
+            
+        cover_data = designer.get_layout_data()
+
         self.statusBar().showMessage("Sedang memproses dokumen...")
         try:
             self.deck = parse_file_to_deck(
@@ -415,11 +459,33 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Gagal memproses dokumen: {exc}")
             QMessageBox.critical(self, "Import Error", f"Dokumen tidak dapat diproses:\n{exc}")
             return
+            
         if self._deck_used_ocr():
             QMessageBox.warning(self, "Hasil OCR", "Hasil OCR mungkin tidak 100% akurat. Mohon periksa kembali teks sebelum export.")
+            
         self.deck.template_name = self.combo_template.currentText()
         self.deck.aspect_ratio = self._get_aspect_ratio()
         self.slides = self.deck.slides
+        
+        # Inject the custom cover slide at the very beginning
+        cover_slide = SlideItem(
+            id="slide-cover-0",
+            title="Slide Cover Utama",
+            content=cover_data["text"],
+            type=SlideType.COVER,
+            section="Cover",
+            is_absolute_layout=True,
+            title_pos_x=cover_data["pos_x"],
+            title_pos_y=cover_data["pos_y"],
+            title_width=cover_data["width"],
+            title_height=cover_data["height"],
+            title_font_profile=cover_data.get("title_font_profile")
+        )
+        if cover_data["bg_image"]:
+            cover_slide.background = SlideBackground(image=cover_data["bg_image"])
+            
+        self.slides.insert(0, cover_slide)
+        
         self.apply_ui_style_to_slides()
         self._clear_layout(self.preview_layout)
         self._clear_layout(self.focus_preview_layout)
@@ -467,6 +533,35 @@ class MainWindow(QMainWindow):
         if self.deck:
             self.deck.aspect_ratio = self._get_aspect_ratio()
         self.refresh_selected_preview()
+
+    def apply_section_start(self):
+        """Menandai slide terpilih sebagai awal dari sebuah section baru."""
+        if not self.deck or not self.selected_slide:
+            return
+            
+        new_section_name = self.edit_section.text().strip()
+        if not new_section_name:
+            new_section_name = "Section Baru"
+            
+        # Update atribut slide melalui DeckEditor
+        editor = DeckEditor(self.deck)
+        slide = editor.update_slide(
+            self.selected_slide.id,
+            section=new_section_name
+        )
+        self.slides = self.deck.slides
+        self.selected_slide = slide
+        
+        # Refresh UI
+        self.refresh_preview_list()
+        self.show_slide_preview(slide)
+        
+        try:
+            idx = self.slides.index(slide)
+        except ValueError:
+            idx = -1
+        
+        QMessageBox.information(self, "Success", f"Slide {idx + 1} sekarang menjadi awal section: {new_section_name}")
 
     def apply_editor_changes(self):
         if not self.deck or not self.selected_slide:
@@ -568,6 +663,14 @@ class MainWindow(QMainWindow):
 
         self.statusBar().showMessage("Sedang membuat file PowerPoint...")
         try:
+            # --- LOGIKA PENGUMPULAN CUSTOM BREAKPOINTS ---
+            breakpoints = {}
+            for i, slide in enumerate(self.slides):
+                # Jika slide memiliki atribut section yang diisi, masukkan ke breakpoints
+                if hasattr(slide, 'section') and slide.section:
+                    breakpoints[i] = slide.section
+            # ----------------------------------------------
+
             self.apply_ui_style_to_slides()
             generate_pptx(
                 slides=self.slides,
@@ -577,6 +680,7 @@ class MainWindow(QMainWindow):
                 transition=transition,
                 template_name=self.combo_template.currentText(),
                 aspect_ratio=self._get_aspect_ratio(),
+                custom_breakpoints=breakpoints if breakpoints else None
             )
             self.statusBar().showMessage("PowerPoint berhasil dibuat.")
             QMessageBox.information(self, "Sukses", "PowerPoint berhasil dibuat dan siap digunakan.")

@@ -311,6 +311,12 @@ class SlideItem:
     speaker: Optional[str]
     is_nyanyian: bool
     metadata: dict[str, Any]
+    is_absolute_layout: bool
+    title_pos_x: float
+    title_pos_y: float
+    title_width: float
+    title_height: float
+    title_font_profile: Optional[dict[str, Any]]
 
     def __init__(
         self,
@@ -330,6 +336,12 @@ class SlideItem:
         slide_type: Any = None,
         included: Optional[bool] = None,
         bg_image: Optional[str] = None,
+        is_absolute_layout: bool = False,
+        title_pos_x: float = 0.1,
+        title_pos_y: float = 0.3,
+        title_width: float = 0.8,
+        title_height: float = 0.2,
+        title_font_profile: Optional[dict[str, Any]] = None,
     ) -> None:
         self.id = id or f"slide-{uuid.uuid4().hex[:10]}"
         self.type = SlideType.from_any(slide_type if slide_type is not None else type)
@@ -349,6 +361,12 @@ class SlideItem:
         self.speaker = speaker
         self.is_nyanyian = is_nyanyian
         self.metadata = metadata or {}
+        self.is_absolute_layout = is_absolute_layout
+        self.title_pos_x = title_pos_x
+        self.title_pos_y = title_pos_y
+        self.title_width = title_width
+        self.title_height = title_height
+        self.title_font_profile = title_font_profile or {}
 
     @property
     def slide_type(self) -> SlideType:
@@ -402,6 +420,12 @@ class SlideItem:
             "speaker": self.speaker,
             "is_nyanyian": self.is_nyanyian,
             "metadata": self.metadata,
+            "is_absolute_layout": self.is_absolute_layout,
+            "title_pos_x": self.title_pos_x,
+            "title_pos_y": self.title_pos_y,
+            "title_width": self.title_width,
+            "title_height": self.title_height,
+            "title_font_profile": self.title_font_profile,
         }
 
     @classmethod
@@ -420,6 +444,12 @@ class SlideItem:
             speaker=data.get("speaker"),
             is_nyanyian=bool(data.get("is_nyanyian", False)),
             metadata=data.get("metadata") or {},
+            is_absolute_layout=bool(data.get("is_absolute_layout", False)),
+            title_pos_x=float(data.get("title_pos_x", 0.1)),
+            title_pos_y=float(data.get("title_pos_y", 0.3)),
+            title_width=float(data.get("title_width", 0.8)),
+            title_height=float(data.get("title_height", 0.2)),
+            title_font_profile=data.get("title_font_profile") or {},
         )
 
     def to_json(self) -> str:

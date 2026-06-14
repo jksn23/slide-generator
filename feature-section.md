@@ -375,3 +375,128 @@ Lalu, terapkan logika pewarisan (*inheritance*) di dalam loop. Ubah kode dari in
 6. Jika slide 19 masuk ke Section baru (misal: "Doa"), pelacak direset sehingga *background* kembali menggunakan *template default* sampai Anda mengatur background baru lagi.
 
 ```
+
+
+Ini adalah langkah yang sangat tepat untuk meningkatkan alur kerja (workflow) pembuatan presentasi. Dengan tombol **"Add Section Start"**, pengguna bisa menandai slide tertentu sebagai awal dari sebuah bab baru, dan slide-slide setelahnya akan mengikuti (mewarisi) background dari slide awal tersebut sampai bertemu section berikutnya.
+
+Berikut adalah panduan yang dapat Anda salin dan berikan kepada AI Agent Anda untuk menambahkan tombol tersebut dan menghubungkan logikanya ke sistem rendering:
+
+---
+
+### Salin Teks di Bawah Ini ke AI Agent Anda:
+
+```markdown
+# Panduan Implementasi Tombol "Add Section Start" & Integrasi Renderer
+
+## Konteks & Tujuan
+Kita ingin memudahkan pengguna membuat Section baru langsung dari UI. Kita akan menambahkan tombol di panel editor yang memungkinkan pengguna menandai slide terpilih sebagai "Awal Section". 
+
+Selain itu, kita harus memastikan bahwa saat proses pembuatan PPTX (`generate_ppt`), sistem mengumpulkan informasi section ini dan mengirimkannya ke renderer sebagai `custom_breakpoints`.
+
+**File Target:** `ui/main_window.py`
+
+Silakan lakukan perubahan berikut secara bertahap:
+
+---
+
+### Tahap 1: Tambahkan Tombol Baru di UI
+Di dalam method `_build_editor_panel()`, tambahkan tombol bernama `self.btn_set_section` di bawah tombol Apply Edit.
+
+Cari bagian layout tombol dan tambahkan:
+```python
+        # Tambahkan tombol Set Section Start
+        self.btn_set_section = QPushButton("Set as Section Start")
+        self.btn_set_section.clicked.connect(self.apply_section_start)
+        # Tambahkan ke layout (sesuaikan dengan posisi yang Anda inginkan)
+        layout.addWidget(self.btn_set_section)
+
+```
+
+---
+
+### Tahap 2: Buat Method `apply_section_start`
+
+Tambahkan fungsi baru di class `MainWindow` untuk memproses perubahan section saat tombol diklik. Fungsi ini akan mengambil teks dari `edit_section`, menyimpannya ke slide aktif, dan memperbarui tampilan list slide.
+
+```python
+    def apply_section_start(self):
+        """Menandai slide terpilih sebagai awal dari sebuah section baru."""
+        if self.current_slide_index is None:
+            return
+            
+        new_section_name = self.edit_section.text().strip()
+        if not new_section_name:
+            new_section_name = "Section Baru"
+            
+        # Update atribut slide melalui DeckEditor
+        self.deck_editor.update_slide(
+            self.current_slide_index,
+            section=new_section_name
+        )
+        
+        # Refresh UI
+        self.refresh_slide_list()
+        QMessageBox.information(self, "Success", f"Slide {self.current_slide_index + 1} sekarang menjadi awal section: {new_section_name}")
+
+```
+
+---
+
+### Tahap 3: Modifikasi Fungsi `generate_ppt` untuk Mengirim Breakpoints
+
+Saat tombol "Generate PPTX" diklik, kita harus memindai semua slide untuk mencari slide mana saja yang memiliki nama `section` yang diisi oleh pengguna, lalu menyusunnya menjadi dictionary `custom_breakpoints`.
+
+Ubah isi method `generate_ppt` di `ui/main_window.py` menjadi seperti ini:
+
+```python
+    def generate_ppt(self):
+        if not self.slides:
+            return
+
+        save_path, _ = QFileDialog.getSaveFileName(self, "Save Presentation", "", "PowerPoint Files (*.pptx)")
+        if not save_path:
+            return
+
+        try:
+            # --- LOGIKA PENGUMPULAN CUSTOM BREAKPOINTS ---
+            breakpoints = {}
+            for i, slide in enumerate(self.slides):
+                # Jika slide memiliki atribut section yang diisi, masukkan ke breakpoints
+                if hasattr(slide, 'section') and slide.section:
+                    breakpoints[i] = slide.section
+            # ----------------------------------------------
+
+            # Panggil fungsi generate dengan parameter custom_breakpoints
+            from core.renderers import generate_pptx
+            generate_pptx(
+                slides=self.slides,
+                output_path=save_path,
+                aspect_ratio="widescreen", # Sesuaikan jika perlu
+                custom_breakpoints=breakpoints if breakpoints else None
+            )
+            QMessageBox.information(self, "Success", "PowerPoint generated successfully!")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to generate PowerPoint: {str(e)}")
+
+```
+
+**Tugas Akhir untuk AI:**
+
+1. Terapkan perubahan UI dan logika di atas pada `ui/main_window.py`.
+2. Pastikan saat `apply_section_start` dipanggil, pengguna mendapatkan notifikasi visual.
+3. Verifikasi kembali bahwa `custom_breakpoints` diteruskan dengan benar ke fungsi `generate_pptx`.
+
+```
+
+---
+
+### Penjelasan Mengapa Ini Menjawab Kebutuhan Anda:
+
+1.  **Tombol Add Section:** Tombol baru ini memungkinkan Anda memilih slide mana saja (misalnya slide lirik lagu pertama) dan memberinya nama section (misal: "Lagu KJ 10").
+2.  **Background Berbeda per Section:** Karena kita sudah mengimplementasikan *Background Inheritance* di langkah sebelumnya, maka:
+    *   Anda cukup mengatur **Background pada slide pertama di section tersebut**.
+    *   Slide-slide berikutnya di bawahnya akan otomatis "ikut" background tersebut.
+    *   Begitu Anda menekan tombol "Set as Section Start" lagi di slide lain dengan nama section berbeda, background lama akan berhenti diwariskan (reset) dan Anda bisa mengatur background baru untuk section tersebut.
+3.  **Visual Terorganisir:** Di PowerPoint hasil ekspor, slide-slide tersebut akan benar-benar terbagi dalam grup *Section* yang rapi secara visual di panel navigasi sebelah kiri.
+
+```

@@ -279,9 +279,39 @@ class PPTXRenderer:
                 # -------------------------------------------
 
                 style = self.resolver.resolve(slide_item)
-                self.background_renderer.render(slide, prs, slide_item, style)
-                if slide_item.type != SlideType.BLANK:
-                    self.text_renderer.render(slide, prs, slide_item, style)
+                
+                if getattr(slide_item, 'is_absolute_layout', False):
+                    slide_w_inches = prs.slide_width
+                    slide_h_inches = prs.slide_height
+                    
+                    left = slide_w_inches * slide_item.title_pos_x
+                    top = slide_h_inches * slide_item.title_pos_y
+                    width = slide_w_inches * slide_item.title_width
+                    height = slide_h_inches * slide_item.title_height
+                    
+                    if slide_item.background and (slide_item.background.image or slide_item.background.color):
+                        self.background_renderer.render(slide, prs, slide_item, style)
+                        
+                    txBox = slide.shapes.add_textbox(left, top, width, height)
+                    tf = txBox.text_frame
+                    tf.word_wrap = True
+                    
+                    lines = slide_item.content.split('\n')
+                    for i, line in enumerate(lines):
+                        p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+                        p.text = line
+                        if slide_item.title_font_profile:
+                            p.font.name = slide_item.title_font_profile.get("family", "Arial")
+                            p.font.size = Pt(slide_item.title_font_profile.get("size", 44))
+                            if slide_item.title_font_profile.get("color"):
+                                p.font.color.rgb = _rgb(slide_item.title_font_profile["color"])
+                            if slide_item.title_font_profile.get("bold"):
+                                p.font.bold = True
+                else:
+                    self.background_renderer.render(slide, prs, slide_item, style)
+                    if slide_item.type != SlideType.BLANK:
+                        self.text_renderer.render(slide, prs, slide_item, style)
+                        
                 self._apply_transition(slide, transition)
             except Exception as e:
                 import logging

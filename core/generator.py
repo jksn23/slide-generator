@@ -74,8 +74,9 @@ def generate_pptx(
     transition: str = None,
     template_name: str = "gmim_default",
     aspect_ratio: str = "square",
+    custom_breakpoints: dict[int, str] | None = None,
 ):
     logger.info("Exporting %s slide(s) to %s", len(slides), output_path)
     renderer = PPTXRenderer(template_name=template_name)
     rendered_slides = _apply_font_overrides(slides, font_family, font_sizes, font_families=font_families)
-    renderer.render(rendered_slides, output_path=output_path, aspect_ratio=aspect_ratio, transition=transition)
+    renderer.render(rendered_slides, output_path=output_path, aspect_ratio=aspect_ratio, transition=transition, custom_breakpoints=custom_breakpoints)

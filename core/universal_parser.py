@@ -12,6 +12,54 @@ from core.text_splitter import normalize_content_line
 class UniversalParser:
     """Convert reader RawBlocks into a ServiceDocument JSON model."""
 
+    MAJOR_SECTION_KEYWORDS = (
+        "PERSIAPAN",
+        "PANGGILAN",
+        "KEMULIAAN",
+        "PENYEMBAHAN",
+        "PENGAKUAN",
+        "ANUGERAH",
+        "PETUNJUK HIDUP",
+        "PEMBACAAN FIRMAN",
+        "PELAYANAN FIRMAN",
+        "PEMBERITAAN FIRMAN",
+        "RESPONS",
+        "PENGAKUAN IMAN",
+        "HUKUM TUHAN",
+        "PERSEMBAHAN",
+        "DOA SYUKUR",
+        "DOA SYAFAAT",
+        "DOA PENUTUP",
+        "WARTA JEMAAT",
+        "PENUTUP",
+        "BERKAT",
+        "BAPTISAN",
+        "SIDI",
+        "PERJAMUAN",
+        "PENEGUHAN",
+        "PERTANYAAN",
+    )
+
+    def _is_major_section(self, text: str) -> bool:
+        text_upper = text.strip().upper()
+        
+        # 1. Tolak jika itu adalah instruksi menyanyi atau judul lagu
+        if any(song_kw in text_upper for song_kw in ["MENYANYI", "KJ NO", "NKB NO", "PKJ NO", "NNBT NO"]):
+            return False
+            
+        # 2. Cek apakah cocok dengan kata kunci utama ibadah
+        for kw in self.MAJOR_SECTION_KEYWORDS:
+            if kw in text_upper:
+                return True
+                
+        # 3. Fallback: Jika teks 100% huruf kapital dan pendek (kurang dari 5 kata), 
+        # anggap sebagai section utama (mengantisipasi nama bab yang tidak ada di list)
+        words = text_upper.split()
+        if text.isupper() and len(words) <= 6 and not "(" in text:
+             return True
+             
+        return False
+
     def __init__(self, preset_name: str = "GMIM Bentuk I") -> None:
         self.preset_name = preset_name
         self.detector = SectionDetector(preset_name=preset_name)
@@ -41,16 +89,25 @@ class UniversalParser:
             if block.kind in {"section", "song_title"}:
                 item_type = block.slide_type.value
                 body_type = self._body_type_for_heading(block)
-                section_type = item_type if block.kind == "song_title" else "section"
-                current_section = ServiceSection(
-                    type=section_type,
-                    title=block.text,
-                    metadata={"body_type": body_type, "source_kind": block.kind},
-                )
-                current_section.items.append(
-                    self._item(block, item_type if block.kind == "song_title" else "section", title=block.text, content=block.text)
-                )
-                document.sections.append(current_section)
+                
+                if self._is_major_section(block.text):
+                    clean_section_name = block.text.split('(')[0].strip().title()
+                    current_section = ServiceSection(
+                        type="section",
+                        title=clean_section_name,
+                        metadata={"body_type": body_type, "source_kind": block.kind},
+                    )
+                    current_section.items.append(
+                        self._item(block, item_type if block.kind == "song_title" else "section", title=block.text, content=block.text)
+                    )
+                    document.sections.append(current_section)
+                else:
+                    # Minor section / Song title -> append to existing section
+                    current_section = self._ensure_section(document, current_section, "body", "Tata Ibadah")
+                    current_section.metadata["body_type"] = body_type
+                    current_section.items.append(
+                        self._item(block, item_type if block.kind == "song_title" else "section", title=block.text, content=block.text)
+                    )
                 continue
 
             current_section = self._ensure_section(document, current_section, "body", "Isi Ibadah")

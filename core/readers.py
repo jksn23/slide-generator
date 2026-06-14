@@ -154,3 +154,66 @@ def read_document_blocks(file_path: str, use_ocr: bool = False) -> list[RawBlock
     if suffix == ".pdf":
         return PDFReader(use_ocr=use_ocr).read(file_path)
     raise ValueError("Format file belum didukung. Gunakan .docx atau .pdf.")
+
+def extract_cover_title_from_docx(doc_path: str) -> str:
+    from docx import Document
+    doc = Document(doc_path)
+    
+    best_text = ""
+    max_weight = 0
+    
+    # Evaluasi maksimal 5 paragraf pertama di halaman awal
+    for p in doc.paragraphs[:5]:
+        text = p.text.strip()
+        if not text:
+            continue
+            
+        weight = 0
+        # Heuristik 1: Ukuran font paragraf atau run teks
+        if p.style.font.size:
+            weight += p.style.font.size.pt
+        
+        # Heuristik 2: Atribut cetak tebal (Bold)
+        if p.style.font.bold:
+            weight += 15
+            
+        # Heuristik 3: Seluruh teks menggunakan HURUF KAPITAL
+        if text.isupper():
+            weight += 10
+            
+        if weight > max_weight:
+            max_weight = weight
+            best_text = text
+            
+    return best_text if best_text else "TATA IBADAH REKAYASA"
+
+def extract_cover_title_from_pdf(pdf_path: str) -> str:
+    try:
+        import fitz
+    except ImportError:
+        return "TATA IBADAH"
+        
+    doc = fitz.open(pdf_path)
+    if len(doc) == 0:
+        return ""
+        
+    page = doc[0] # Ambil halaman pertama saja
+    blocks = page.get_text("dict").get("blocks", [])
+    
+    best_text = ""
+    max_font_size = 0
+    
+    for b in blocks:
+        if "lines" in b:
+            for l in b["lines"]:
+                for s in l["spans"]:
+                    text = s.get("text", "").strip()
+                    size = s.get("size", 0)
+                    
+                    # Heuristik: Cari ukuran font murni terbesar di page 1
+                    if size > max_font_size and len(text) > 3:
+                        max_font_size = size
+                        best_text = text
+                        
+    return best_text if best_text else "TATA IBADAH"
+
