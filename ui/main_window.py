@@ -275,6 +275,9 @@ class MainWindow(QMainWindow):
         self.edit_align.addItems(["center", "left", "right"])
         self.btn_set_section = QPushButton("Set as Section Start")
         self.btn_apply_edit = QPushButton("Terapkan Edit")
+        self.btn_edit_cover = QPushButton("🎨 Edit Tata Letak Cover")
+        self.btn_edit_cover.clicked.connect(self.open_cover_reeditor)
+        self.btn_edit_cover.setVisible(False) # Sembunyikan secara default
         self.btn_duplicate = QPushButton("Duplicate")
         self.btn_delete = QPushButton("Delete")
         self.btn_split = QPushButton("Split Slide")
@@ -303,6 +306,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(content_label)
         layout.addWidget(self.edit_content, stretch=1)
         layout.addWidget(self.btn_set_section)
+        layout.addWidget(self.btn_edit_cover)
         layout.addWidget(self.btn_apply_edit)
         layout.addWidget(self.btn_duplicate)
         layout.addWidget(self.btn_delete)
@@ -523,11 +527,53 @@ class MainWindow(QMainWindow):
         self.edit_section.setText(slide.section)
         self.edit_align.setCurrentText(slide.ensure_style().get("align", "center"))
         self.lbl_overflow_warning.setText(self._overflow_warning(slide))
+        
+        if slide.type == SlideType.COVER:
+            self.btn_edit_cover.setVisible(True)
+        else:
+            self.btn_edit_cover.setVisible(False)
 
     def refresh_selected_preview(self, *args):
         self.apply_ui_style_to_slides()
         if self.selected_slide:
             self.show_slide_preview(self.selected_slide)
+
+    def open_cover_reeditor(self):
+        if not self.selected_slide or self.selected_slide.type != SlideType.COVER:
+            return
+            
+        cover_slide = self.selected_slide
+        
+        existing_layout = {
+            "text": cover_slide.content,
+            "pos_x": getattr(cover_slide, 'title_pos_x', 0.1),
+            "pos_y": getattr(cover_slide, 'title_pos_y', 0.3),
+            "width": getattr(cover_slide, 'title_width', 0.8),
+            "height": getattr(cover_slide, 'title_height', 0.2),
+            "bg_image": cover_slide.background.image if cover_slide.background else None,
+            "title_font_profile": getattr(cover_slide, 'title_font_profile', None)
+        }
+        
+        from PyQt5.QtWidgets import QDialog
+        from ui.cover_editor import CoverDesignerDialog
+        designer = CoverDesignerDialog(detected_title=cover_slide.content, existing_layout=existing_layout, parent=self)
+        
+        if designer.exec_() == QDialog.Accepted:
+            new_data = designer.get_layout_data()
+            
+            cover_slide.content = new_data["text"]
+            cover_slide.title_pos_x = new_data["pos_x"]
+            cover_slide.title_pos_y = new_data["pos_y"]
+            cover_slide.title_width = new_data["width"]
+            cover_slide.title_height = new_data["height"]
+            cover_slide.title_font_profile = new_data.get("title_font_profile")
+            
+            if new_data["bg_image"]:
+                from core.models import SlideBackground
+                cover_slide.background = SlideBackground(image=new_data["bg_image"])
+                
+            self.refresh_preview_list()
+            self.show_slide_preview(cover_slide)
 
     def on_ratio_changed(self, *args):
         if self.deck:
