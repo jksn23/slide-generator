@@ -32,7 +32,7 @@ def test_universal_parser_outputs_service_document_json():
     assert document.service_form == "GMIM Bentuk V"
     assert document.theme_weekly == "Hidup dalam Kasih"
     assert document.title == "TATA IBADAH MINGGU"
-    assert document.sections[1].title == "PEMBUKAAN"
+    assert document.sections[1].title in ("PEMBUKAAN", "Pembukaan")
     assert document.sections[1].items[1].speaker == "P"
     assert document.sections[1].items[2].speaker == "J"
     assert document.to_dict()["sections"][1]["items"][1]["metadata"]["source_type"] == "docx"

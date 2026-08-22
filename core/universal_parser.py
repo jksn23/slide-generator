@@ -13,8 +13,11 @@ class UniversalParser:
     """Convert reader RawBlocks into a ServiceDocument JSON model."""
 
     MAJOR_SECTION_KEYWORDS = (
+        # Kata kunci liturgi utama GMIM
         "PERSIAPAN",
+        "PEMBUKAAN",
         "PANGGILAN",
+        "VOTUM",
         "KEMULIAAN",
         "PENYEMBAHAN",
         "PENGAKUAN",
@@ -30,6 +33,8 @@ class UniversalParser:
         "DOA SYUKUR",
         "DOA SYAFAAT",
         "DOA PENUTUP",
+        "DOA UMUM",
+        "DOA PENYEMBAHAN",
         "WARTA JEMAAT",
         "PENUTUP",
         "BERKAT",
@@ -38,24 +43,49 @@ class UniversalParser:
         "PERJAMUAN",
         "PENEGUHAN",
         "PERTANYAAN",
+        "TAHBISAN",
+        "BERITA ANUGERAH",
+        "PENGANTAR PEMBACAAN",
+        "JANJI ANUGERAH",
+        "PENGUTUSAN",
+        "FIRMAN TUHAN",
+        "KOLEKTE",
+        "PELANTIKAN",
+        "NYANYIAN MASUK",
+        "NYANYIAN PENUTUP",
+        "SALAM DAN BERKAT",
+        "MENGHADAP TUHAN",
+        "JAWABAN JEMAAT",
+        "NAS PEMBIMBING",
+        "PUJI-PUJIAN",
+        "SAAT TEDUH",
+        "KHOTBAH",
+        "RENUNGAN",
     )
 
     def _is_major_section(self, text: str) -> bool:
         text_upper = text.strip().upper()
         
+        # 0. Kalimat panjang tidak mungkin judul section (lirik, doa, ayat alkitab, dsb)
+        if len(text_upper) > 80:
+            return False
+        
         # 1. Tolak jika itu adalah instruksi menyanyi atau judul lagu
-        if any(song_kw in text_upper for song_kw in ["MENYANYI", "KJ NO", "NKB NO", "PKJ NO", "NNBT NO"]):
+        if any(song_kw in text_upper for song_kw in ["MENYANYI", "KJ NO", "NKB NO", "PKJ NO", "NNBT NO", "KJ.", "NKB.", "PKJ."]):
             return False
             
-        # 2. Cek apakah cocok dengan kata kunci utama ibadah
-        for kw in self.MAJOR_SECTION_KEYWORDS:
-            if kw in text_upper:
+        # 2. Cek terhadap daftar kata kunci major section menggunakan word boundary
+        #    sehingga "PERSEMBAHAN" tidak memicu "PERSEMBAHANMU"
+        for kw in self._all_major_keywords:
+            # Ganti spasi dalam keyword multi-kata dengan pencocokan bebas spasi
+            pattern = r"\b" + re.escape(kw) + r"\b"
+            if re.search(pattern, text_upper):
                 return True
                 
-        # 3. Fallback: Jika teks 100% huruf kapital dan pendek (kurang dari 5 kata), 
+        # 3. Fallback: Jika teks 100% huruf kapital dan pendek (maks 6 kata), 
         # anggap sebagai section utama (mengantisipasi nama bab yang tidak ada di list)
         words = text_upper.split()
-        if text.isupper() and len(words) <= 6 and not "(" in text:
+        if text.isupper() and len(words) <= 6 and "(" not in text:
              return True
              
         return False
@@ -64,6 +94,24 @@ class UniversalParser:
         self.preset_name = preset_name
         self.detector = SectionDetector(preset_name=preset_name)
         self.module_detector = ModuleDetector()
+        # Bangun set kata kunci major section yang diperkaya dari preset aktif
+        self._all_major_keywords: list[str] = list(self.MAJOR_SECTION_KEYWORDS)
+        try:
+            from core.presets import PresetRegistry
+            preset = PresetRegistry().get(preset_name)
+            # Tambahkan nama-nama section dari preset ke daftar kata kunci
+            for section_name in preset.get("sections", []):
+                kw = section_name.upper().strip()
+                if kw and kw not in self._all_major_keywords:
+                    self._all_major_keywords.append(kw)
+            # Tambahkan semua nilai dari keywords preset
+            for category_keywords in preset.get("keywords", {}).values():
+                for kw in category_keywords:
+                    kw_upper = kw.upper().strip()
+                    if kw_upper and kw_upper not in self._all_major_keywords:
+                        self._all_major_keywords.append(kw_upper)
+        except (KeyError, Exception):
+            pass  # Fallback ke keyword statis jika preset tidak ditemukan
 
     def parse(self, blocks: list[RawBlock]) -> ServiceDocument:
         document = ServiceDocument(

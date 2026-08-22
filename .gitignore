@@ -5,3 +5,6 @@
 .claude
 .kiro
 .pptx
+CLAUDE.md
+.pytest_cache/
+__pycache__/

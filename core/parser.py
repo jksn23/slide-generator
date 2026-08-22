@@ -233,7 +233,15 @@ class BlockClassifier:
         )
 
     def _has_section_heading_keyword(self, block: RawBlock, text: str, upper: str) -> bool:
-        if not any(keyword in upper for keyword in self.SECTION_KEYWORDS):
+        # Kalimat liturgi/ayat panjang yang mengandung kata kunci tidak boleh dianggap heading
+        if len(text) > 120:
+            return False
+        # Gunakan word-boundary agar "PERSEMBAHAN" tidak match "PERSEMBAHANMU"
+        has_keyword = any(
+            re.search(r"\b" + re.escape(kw) + r"\b", upper)
+            for kw in self.SECTION_KEYWORDS
+        )
+        if not has_keyword:
             return False
         return (
             block.style_name.startswith("Heading")
@@ -244,6 +252,7 @@ class BlockClassifier:
             or block.uppercase_ratio >= 0.5
         )
 
+
     def _is_cover_title(self, upper: str) -> bool:
         return "TATA IBADAH" in upper or upper.startswith("IBADAH ")
 
@@ -251,6 +260,9 @@ class BlockClassifier:
         return bool(re.search(r"\b\d+\s*:\s*\d+", text))
 
     def _is_song_title_text(self, text: str) -> bool:
+        # Judul lagu selalu teks pendek; kalimat panjang bukan judul lagu
+        if len(text) > 120:
+            return False
         return bool(text and not self._looks_like_bible_reference(text) and (
             self.SONG_RE.match(text)
             or re.search(r"\bmenyanyi\b", text, re.I)

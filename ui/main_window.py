@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import (
     QCheckBox,
     QFileDialog,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -14,6 +15,7 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSlider,
     QSpinBox,
     QSizePolicy,
     QSplitter,
@@ -60,6 +62,7 @@ class MainWindow(QMainWindow):
         self.slides = []
         self.selected_slide = None
         self.file_path = None
+        self.preview_zoom_size = 360  # ukuran default preview utama (px)
         self.init_ui()
 
     def init_ui(self):
@@ -116,16 +119,22 @@ class MainWindow(QMainWindow):
         inner_splitter.setHandleWidth(12)
         
         slide_list_panel = self._build_slide_list_panel()
+        
+        # Sisi kanan: preview di atas, editor di bawah (splitter vertikal)
+        right_vertical_splitter = QSplitter(Qt.Vertical)
+        right_vertical_splitter.setHandleWidth(10)
         focus_preview_panel = self._build_focus_preview_panel()
         editor_panel = self._build_editor_panel()
+        right_vertical_splitter.addWidget(focus_preview_panel)
+        right_vertical_splitter.addWidget(editor_panel)
+        right_vertical_splitter.setStretchFactor(0, 3)  # Preview lebih besar
+        right_vertical_splitter.setStretchFactor(1, 2)  # Editor lebih kecil
         
         inner_splitter.addWidget(slide_list_panel)
-        inner_splitter.addWidget(focus_preview_panel)
-        inner_splitter.addWidget(editor_panel)
+        inner_splitter.addWidget(right_vertical_splitter)
         
-        inner_splitter.setStretchFactor(0, 2)
-        inner_splitter.setStretchFactor(1, 5)
-        inner_splitter.setStretchFactor(2, 3)
+        inner_splitter.setStretchFactor(0, 1)  # Slide list
+        inner_splitter.setStretchFactor(1, 3)  # Preview + editor
         
         right_layout.addWidget(inner_splitter)
 
@@ -249,12 +258,36 @@ class MainWindow(QMainWindow):
         panel = QWidget()
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        
+        # Header: judul + kontrol zoom
+        header_row = QHBoxLayout()
         title = QLabel("Preview Utama")
         title.setProperty("class", "SectionTitle")
+        header_row.addWidget(title)
+        header_row.addStretch()
+        
+        # Slider Zoom
+        zoom_label_prefix = QLabel("Zoom:")
+        zoom_label_prefix.setProperty("class", "BodyText")
+        self.zoom_slider = QSlider(Qt.Horizontal)
+        self.zoom_slider.setMinimum(200)
+        self.zoom_slider.setMaximum(700)
+        self.zoom_slider.setValue(360)
+        self.zoom_slider.setFixedWidth(130)
+        self.zoom_slider.setToolTip("Zoom preview slide")
+        self.zoom_pct_label = QLabel("100%")
+        self.zoom_pct_label.setProperty("class", "BodyText")
+        self.zoom_pct_label.setFixedWidth(40)
+        self.zoom_slider.valueChanged.connect(self._on_zoom_changed)
+        header_row.addWidget(zoom_label_prefix)
+        header_row.addWidget(self.zoom_slider)
+        header_row.addWidget(self.zoom_pct_label)
+        layout.addLayout(header_row)
+
         self.focus_preview_container = QWidget()
         self.focus_preview_layout = QVBoxLayout(self.focus_preview_container)
         self.focus_preview_layout.addStretch()
-        layout.addWidget(title)
         layout.addWidget(self.focus_preview_container, stretch=1)
         return panel
 
@@ -262,10 +295,17 @@ class MainWindow(QMainWindow):
         panel = QFrame()
         panel.setProperty("class", "Card")
         layout = QVBoxLayout(panel)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(6)
         title = QLabel("Panel Edit")
         title.setProperty("class", "SectionTitle")
+        layout.addWidget(title)
+        
+        # ── Bidang-bidang input: 2 kolom grid ──────────────────────────────────
+        fields_grid = QGridLayout()
+        fields_grid.setSpacing(4)
+        
         self.edit_title = QLineEdit()
-        self.edit_content = QTextEdit()
         self.edit_type = QComboBox()
         self.edit_type.addItems([slide_type.value for slide_type in SlideType])
         self.edit_template = QComboBox()
@@ -273,20 +313,73 @@ class MainWindow(QMainWindow):
         self.edit_section = QLineEdit()
         self.edit_align = QComboBox()
         self.edit_align.addItems(["center", "left", "right"])
+        
+        def _lbl(text):
+            l = QLabel(text)
+            l.setProperty("class", "BodyText")
+            return l
+        
+        # Baris 0: Judul | Tipe
+        fields_grid.addWidget(_lbl("Judul:"), 0, 0)
+        fields_grid.addWidget(_lbl("Tipe:"), 0, 2)
+        fields_grid.addWidget(self.edit_title, 1, 0, 1, 2)
+        fields_grid.addWidget(self.edit_type, 1, 2, 1, 2)
+        # Baris 2: Section | Alignment
+        fields_grid.addWidget(_lbl("Section:"), 2, 0)
+        fields_grid.addWidget(_lbl("Alignment:"), 2, 2)
+        fields_grid.addWidget(self.edit_section, 3, 0, 1, 2)
+        fields_grid.addWidget(self.edit_align, 3, 2, 1, 2)
+        # Baris 4: Template slide (full width)
+        fields_grid.addWidget(_lbl("Template slide:"), 4, 0)
+        fields_grid.addWidget(self.edit_template, 5, 0, 1, 4)
+        layout.addLayout(fields_grid)
+        
+        # ── Area Isi ────────────────────────────────────────────────────────────
+        content_label = QLabel("Isi:")
+        content_label.setProperty("class", "BodyText")
+        self.edit_content = QTextEdit()
+        layout.addWidget(content_label)
+        layout.addWidget(self.edit_content, stretch=1)
+        
+        # ── Tombol Set Section + Apply Edit ────────────────────────────────────
         self.btn_set_section = QPushButton("Set as Section Start")
         self.btn_apply_edit = QPushButton("Terapkan Edit")
         self.btn_edit_cover = QPushButton("🎨 Edit Tata Letak Cover")
         self.btn_edit_cover.clicked.connect(self.open_cover_reeditor)
-        self.btn_edit_cover.setVisible(False) # Sembunyikan secara default
-        self.btn_duplicate = QPushButton("Duplicate")
-        self.btn_delete = QPushButton("Delete")
-        self.btn_split = QPushButton("Split Slide")
-        self.btn_merge = QPushButton("Merge Next")
-        self.btn_move_up = QPushButton("Move Up")
-        self.btn_move_down = QPushButton("Move Down")
+        self.btn_edit_cover.setVisible(False)
+        
+        primary_row = QHBoxLayout()
+        primary_row.setSpacing(6)
+        primary_row.addWidget(self.btn_set_section)
+        primary_row.addWidget(self.btn_edit_cover)
+        primary_row.addWidget(self.btn_apply_edit)
+        layout.addLayout(primary_row)
+        
+        # ── Tombol Aksi Slide — Grid kompak 3-kolom ────────────────────────────
+        self.btn_duplicate = QPushButton("Duplikat")
+        self.btn_delete = QPushButton("Hapus")
+        self.btn_split = QPushButton("Split")
+        self.btn_merge = QPushButton("Gabung")
+        self.btn_move_up = QPushButton("▲ Naik")
+        self.btn_move_down = QPushButton("▼ Turun")
+        
+        action_grid = QGridLayout()
+        action_grid.setSpacing(4)
+        action_grid.addWidget(self.btn_duplicate, 0, 0)
+        action_grid.addWidget(self.btn_delete,    0, 1)
+        action_grid.addWidget(self.btn_split,     0, 2)
+        action_grid.addWidget(self.btn_merge,     1, 0)
+        action_grid.addWidget(self.btn_move_up,   1, 1)
+        action_grid.addWidget(self.btn_move_down, 1, 2)
+        layout.addLayout(action_grid)
+        
+        # ── Peringatan Overflow ─────────────────────────────────────────────────
         self.lbl_overflow_warning = QLabel("")
         self.lbl_overflow_warning.setStyleSheet("color:#C62828;")
         self.lbl_overflow_warning.setWordWrap(True)
+        layout.addWidget(self.lbl_overflow_warning)
+        
+        # ── Sambungkan sinyal ───────────────────────────────────────────────────
         self.btn_set_section.clicked.connect(self.apply_section_start)
         self.btn_apply_edit.clicked.connect(self.apply_editor_changes)
         self.btn_duplicate.clicked.connect(self.duplicate_selected_slide)
@@ -295,26 +388,6 @@ class MainWindow(QMainWindow):
         self.btn_merge.clicked.connect(self.merge_selected_slide)
         self.btn_move_up.clicked.connect(lambda: self.move_selected_slide(-1))
         self.btn_move_down.clicked.connect(lambda: self.move_selected_slide(1))
-        layout.addWidget(title)
-        self._labeled_widget(layout, "Judul:", self.edit_title)
-        self._labeled_widget(layout, "Tipe:", self.edit_type)
-        self._labeled_widget(layout, "Template slide:", self.edit_template)
-        self._labeled_widget(layout, "Section:", self.edit_section)
-        self._labeled_widget(layout, "Alignment:", self.edit_align)
-        content_label = QLabel("Isi:")
-        content_label.setProperty("class", "BodyText")
-        layout.addWidget(content_label)
-        layout.addWidget(self.edit_content, stretch=1)
-        layout.addWidget(self.btn_set_section)
-        layout.addWidget(self.btn_edit_cover)
-        layout.addWidget(self.btn_apply_edit)
-        layout.addWidget(self.btn_duplicate)
-        layout.addWidget(self.btn_delete)
-        layout.addWidget(self.btn_split)
-        layout.addWidget(self.btn_merge)
-        layout.addWidget(self.btn_move_up)
-        layout.addWidget(self.btn_move_down)
-        layout.addWidget(self.lbl_overflow_warning)
         return panel
 
     def _build_footer(self):
@@ -515,7 +588,7 @@ class MainWindow(QMainWindow):
             slide,
             template_name=self.combo_template.currentText(),
             aspect_ratio=self._get_aspect_ratio(),
-            size=360,
+            size=self.preview_zoom_size,
         )
         self.focus_preview_layout.addStretch()
         self.focus_preview_layout.addWidget(preview, alignment=Qt.AlignCenter)
@@ -535,6 +608,15 @@ class MainWindow(QMainWindow):
 
     def refresh_selected_preview(self, *args):
         self.apply_ui_style_to_slides()
+        if self.selected_slide:
+            self.show_slide_preview(self.selected_slide)
+
+    def _on_zoom_changed(self, value: int):
+        """Handler untuk slider zoom: perbarui ukuran preview dan refresh tampilan."""
+        self.preview_zoom_size = value
+        # Tampilkan persentase relatif terhadap nilai default (360)
+        pct = int(value / 360 * 100)
+        self.zoom_pct_label.setText(f"{pct}%")
         if self.selected_slide:
             self.show_slide_preview(self.selected_slide)
 
